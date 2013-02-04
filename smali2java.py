@@ -1,4 +1,6 @@
 #import re
+import os
+import sys
 
 class smali2java():
 	
@@ -61,6 +63,10 @@ class smali2java():
 		
 		pass
 
+	def debug(self, string):
+		#print string
+		pass
+		
 	def resetRegister(self):
 		self.register = {}
 		self.local = {}
@@ -105,15 +111,15 @@ class smali2java():
 		self.outputMethod.insert(pos, string)		
 	
 	def outputToFile(self, file = None):
-		print '--------------------------------'
+		#print '--------------------------------'
 		for string in self.outputClass:
 			if file != None:
 				file.write(string +'\n')
-			print string
+			#print string
 		for string in self.outputMethod:
 			if file != None:
 				file.write(string + '\n')
-			print string 
+			#print string 
 			
 	def doTranslate(self, line):
 		line = line.strip()
@@ -288,24 +294,28 @@ class smali2java():
 
 		elif line[1:7] == 'locals':
 			pass
-		elif line[1:6] == 'local' or line[1: 14] == 'restart local':
+		elif line[1:6] == 'local':
 			# .local v0, bundle:Landroid/os/Bundle;
-			# .restart local v0       #i:I
+
 			
 			line = line.replace(',',' ')
 			part = line.split()
 			if line[1:8] == 'restart':
 				del part[0]
 			
-			part2 = part[2].split(':')
-			
-			var = part2[0]
-			reg = part[1]
-			c = self.makeClass(part2[1])			
-			value = self.getRegister(reg)
-			string = c + ' ' + var + ' = ' + value + '    /* <code> */'
-			self.setRegister(reg, var, True)
-			self.appendMethodToFile(string)
+			if len(part) > 2:
+				part2 = part[2].split(':')
+				var = part2[0]
+				reg = part[1]
+				c = self.makeClass(part2[1])			
+				value = self.getRegister(reg)
+				string = c + ' ' + var + ' = ' + value + '    /* <code> */'
+				self.setRegister(reg, var, True)
+				self.appendMethodToFile(string)
+
+			pass
+		elif line[1: 14] == 'restart local':
+			# .restart local v0       #i:I
 			pass
 		
 		elif line[1:10] == 'end local':
@@ -334,12 +344,29 @@ class smali2java():
 			self.outputShift = self.outputShift - 1
 			n = self.switchInfo[self.curLabel]
 			string = '}'
-			self.insertMethodToFile(string, n)
+			self.insertMethodToFile(string, n)			
+		elif line[1:6] == 'catch':
+			# .catch Ljava/lang/Exception; {:try_start_7 .. :try_end_7} :catch_7
+			part = line.split()
+			if line[6:9] == 'all':
+				c = None
+				label = part[4][1:]
+			else:
+				c = self.makeClass(part[1])
+				label = part[5][1:]
+			if c != None:
+				self.appendMethodToFile('catch (' + c + '){')
+			else:
+				self.appendMethodToFile('catch (){')
+			self.outputShift = self.outputShift + 1
+			self.appendMethodToFile('goto ' + label)
+			self.outputShift = self.outputShift - 1
+			self.appendMethodToFile('}')
+			
 		elif line[1:7] == 'source':
 			pass
 		else:
-			print '<error>'
-			print line
+			self.debug('<error dot>' + line)
 
 
 	def doPrologue(self, line):
@@ -360,12 +387,22 @@ class smali2java():
 	def doLabel(self, line):
 		# :cond_1
 		label = line[1:]
-		string = ':' + label
 		self.curLabel = label
-		self.appendMethodToFile(string, 1)
+		
+		if label[0:10] == 'try_start_':
+			string = 'try {'
+			self.appendMethodToFile(string)
+			self.outputShift = self.outputShift + 1
+		elif label[0:8] == 'try_end_':
+			string = '}'
+			self.outputShift = self.outputShift - 1	
+			self.appendMethodToFile(string)
+		else:
+			string = ':' + label
+			self.appendMethodToFile(string, 1)
 	
 	def doCommit(self, line):
-		#self.appendMethodToFile(line)
+		self.appendMethodToFile('//' + line)
 		pass
 	
 	def doCommand(self, line):
@@ -408,8 +445,7 @@ class smali2java():
 		elif line[0:3] == 'not' or line[0:3] == 'neg':
 			self.doCalculate2(line)
 		elif line[0:3] == 'cmp':
-			print '<error>'
-			print line
+			self.debug('<error cmp>' + line)
 		elif line[0:13] == 'sparse-switch' or line[0:13] == 'packed-switch':
 			self.doSwitch(line)
 			pass
@@ -425,8 +461,7 @@ class smali2java():
 			# monitor-enter vx
 			# const-class vx,type_id
 			# nop
-			print '<error>'
-			print line
+			self.debug('<error> command:' + line)
 
 
 	def makeClass(self, part, add = True):
@@ -457,7 +492,7 @@ class smali2java():
 		ret = ret.split('.')[-1]
 		
 		if array == True:
-			ret = (c + '[]')
+			ret = (ret + '[]')
 		
 		return ret
 
@@ -556,14 +591,12 @@ class smali2java():
 			string = string + ')'
 			self.appendMethodToFile(string)
 		else:
-			print '<error> invoke :'
-			print line 
+			self.debug('<error> invoke :' + line)
 			
 	def noused_doConst(self, line):
 		# const/high16 v2, 0x7f03
 		# const-string v2, ", "
 		line = line.replace(', ', ',')
-		
 		
 		part = line.split()
 		part2 = part[1].split(',')
@@ -645,9 +678,18 @@ class smali2java():
 			part = line.split()
 			ret = part[1]
 			self.setRegister(ret, 'ret')
-			#string = '<move result> ' + ret + '=ret'
 			pass
-
+		elif line[4:14] == '-exception':
+			pass
+		else:
+		# move-object/from16 v0, p0	
+			line = line.replace(', ', ' ')
+			part = line.split()
+			var = part[1]
+			value = self.getRegister(part[2])
+			self.setRegister(var, value)
+		
+		
 	def doReturn(self, line):
 		if line[6:11] == '-void':
 			# return-void
@@ -735,7 +777,6 @@ class smali2java():
 			p2 = self.getRegister(part[3])
 			
 		calculate = self.calculate[part2[0]]
-		
 		self.setRegister(ret, '(' + p1 + ' ' + calculate + ' ' + p2 + ')')
 
 	def doCalculate2(self, line):
@@ -748,7 +789,7 @@ class smali2java():
 		value = self.getRegister(part[2])
 		calculate = self.calculate[part2[0]]
 		
-		self.getRegister(var, '(' + calculate + value + ')')
+		self.setRegister(var, '(' + calculate + value + ')')
 
 
 	def doSwitch(self, line):
@@ -766,7 +807,6 @@ class smali2java():
 		self.switchInfo[data] = self.getMethodCount()
 	
 	def doSwitchCase(self, line):
-		
 		line = line.replace(' ', '')
 		part = line.split('->')
 		
@@ -813,18 +853,53 @@ class smali2java():
 		string = 'throw ' + value
 		self.appendMethodToFile(string)
 		
-		
-	
-if __name__ == "__main__":
-	fileSmali = open('smali.smali')
-	fileJava = open('smali.java', 'w')
+
+
+def listfile(dirname):
+	files = []
+	try:
+		ls=os.listdir(dirname)
+	except:
+		print 'dir access deny'
+	else:
+		for l in ls:
+			filename = os.path.join(dirname,l)
+			if(os.path.isdir(filename)):
+				filenames = listfile(filename)
+				for filename in filenames:
+					files.append(filename)
+			else:
+				files.append(filename)
+				
+	return files		
+
+def smaliToJava(smali, java):
+	fileSmali = open(smali)
+	fileJava = open(java, 'w')
 	
 	sm = smali2java()
 	
 	for line in fileSmali.readlines():
-		sm.doTranslate(line)
+		try:
+			sm.doTranslate(line)
+		except:
+			pass
 	sm.doTranslateEnd()
 	sm.outputToFile(fileJava)
-	fileSmali.close()
+	fileSmali.close()	
 	
-	pass
+if __name__ == "__main__":
+	if len(sys.argv) == 2:
+		dir = sys.argv[1]
+	else:
+		print 'smali2java <dir>'
+		print 'version: 1.00'
+		exit()
+		
+	list = listfile(dir)
+	
+	for smali in list:
+		if smali[-6:] == '.smali':
+			print 'FileName:' + smali
+			java = smali.replace('.smali', '.java')
+			smaliToJava(smali, java)
