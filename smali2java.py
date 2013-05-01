@@ -20,6 +20,10 @@ class smali2java():
 		self.switchMode = False
 		self.switchBase = 0
 		
+		
+		self.invokeRet = None
+		self.invokeInfo = None
+		
 		#V void - Z boolean B byte S short C char I int J long F float D double 	
 		self.flags = {}
 		self.flags['V'] = 'void'
@@ -64,7 +68,7 @@ class smali2java():
 		pass
 
 	def debug(self, string):
-		#print string
+		print string
 		pass
 		
 	def resetRegister(self):
@@ -73,22 +77,25 @@ class smali2java():
 		self.switchInfo = {}
 		
 	def getRegister(self, reg):
-		
 		if self.register.has_key(reg):
 			return self.register[reg]
 		else:
-			return '<'+reg+'>'
+			return reg
 			
 	def setRegister(self, reg, value, local = None):
 		
 		skip = self.local.has_key(reg) and self.local[reg] == True
 		if (not skip) or local != None:
 			self.register[reg] = value
+		else:
+			var = self.getRegister(reg)
+			self.appendMethodToFile(var + ' = ' + value)
 
 		if local == True:
 			self.local[reg] = True
 		elif local == False:
 			self.local[reg] = False
+	
 	
 	def appendClassToFile(self, string):
 		self.outputClass.append(string)
@@ -289,15 +296,15 @@ class smali2java():
 				self.doPrologue(line)
 				self.createMethod = False
 			self.outputShift = self.outputShift - 1
-			self.appendMethodToFile('}')
+			string = '}'
+			string = string + '//:end method::'
+			self.appendMethodToFile(string)
 			#self.resetRegister()
 
 		elif line[1:7] == 'locals':
 			pass
-		elif line[1:6] == 'local':
+		elif line[1:6] == 'local' or line[1: 14] == 'restart local':
 			# .local v0, bundle:Landroid/os/Bundle;
-
-			
 			line = line.replace(',',' ')
 			part = line.split()
 			if line[1:8] == 'restart':
@@ -306,18 +313,18 @@ class smali2java():
 			if len(part) > 2:
 				part2 = part[2].split(':')
 				var = part2[0]
+				if var[0] == '#':
+					var = var[1:]
 				reg = part[1]
 				c = self.makeClass(part2[1])			
 				value = self.getRegister(reg)
 				string = c + ' ' + var + ' = ' + value + '    /* <code> */'
 				self.setRegister(reg, var, True)
+				#n = self.invokeInfo
+				#self.insertMethodToFile(string, n)
 				self.appendMethodToFile(string)
 
 			pass
-		elif line[1: 14] == 'restart local':
-			# .restart local v0       #i:I
-			pass
-		
 		elif line[1:10] == 'end local':
 			# .end local v0           #cityName:Ljava/lang/String;
 			part = line.split()
@@ -380,6 +387,7 @@ class smali2java():
 			
 		string = string + self.functionRet + ' ' + self.functionName + '('
 		string = string + self.makeParamsClass2String(self.functionParams) + '){'
+		string = string + ' //:start method::' + self.functionName
 		self.appendMethodToFile(string)
 		self.outputShift = self.outputShift + 1	
 			
@@ -399,16 +407,20 @@ class smali2java():
 			self.appendMethodToFile(string)
 		else:
 			string = ':' + label
+			string = string + ' //:label::'+label
 			self.appendMethodToFile(string, 1)
 	
 	def doCommit(self, line):
-		self.appendMethodToFile('//' + line)
+		#self.appendMethodToFile('//' + line)
 		pass
 	
 	def doCommand(self, line):
+		self.lineDelay = False
+		
 		if self.createMethod == True:
 			self.doPrologue('.prologue')
 			self.createMethod = False
+
 		
 		if line[0:6] == 'invoke':
 			self.doInvoke(line)
@@ -440,12 +452,12 @@ class smali2java():
 			self.doCheck(line)
 		elif line.find('-to-') > 0:
 			self.doTo(line)
-		elif line[0:3] == 'add' or line[0:3] == 'sub' or line[0:3] == 'mul' or line[0:3] == 'div' or line[0:3] == 'rem' or line[0:3] == 'and' or line[0:3] == 'or' or line[0:3] == 'xor' or line[0:3] == 'shl' or line[0:3] == 'shr' or line[0:4] == 'ushr':
+		elif line[0:3] == 'add' or line[0:3] == 'sub' or line[0:3] == 'mul' or line[0:3] == 'div' or line[0:3] == 'rem' or line[0:3] == 'and' or line[0:2] == 'or' or line[0:3] == 'xor' or line[0:3] == 'shl' or line[0:3] == 'shr' or line[0:4] == 'ushr':
 			self.doCalculate(line)
 		elif line[0:3] == 'not' or line[0:3] == 'neg':
 			self.doCalculate2(line)
 		elif line[0:3] == 'cmp':
-			self.debug('<error cmp>' + line)
+			self.doCmp(line)
 		elif line[0:13] == 'sparse-switch' or line[0:13] == 'packed-switch':
 			self.doSwitch(line)
 			pass
@@ -453,15 +465,25 @@ class smali2java():
 			self.doArray(line)
 		elif line[0:5] == 'throw':
 			self.doThrow(line)
+		elif line[0:11] == 'instance-of':
+			self.doInstanceOf(line)
+		elif line[0:3] == 'nop':
+			pass
+		elif line[0:7] == 'monitor':
+			self.doMonitor(line)
 		else:
 			# execute-inline
 			# invoke-virtual/range {vx..vy},methodtocall
-			# packed-switch vx,table
 			# filled-new-array {parameters},type_id
 			# monitor-enter vx
 			# const-class vx,type_id
-			# nop
 			self.debug('<error> command:' + line)
+			
+		if self.lineDelay == False:
+			if self.invokeRet != None:
+				n = self.invokeInfo
+				self.insertMethodToFile(self.invokeRet, n)
+				self.invokeRet = None
 
 
 	def makeClass(self, part, add = True):
@@ -551,59 +573,55 @@ class smali2java():
 		params = self.makeParams(part2[1])
 		retClass = line.split(')')[-1]
 		
-		showRet = ''
+		showRet = False
 		if retClass != 'V':
-			showRet = 'ret = '
+			showRet = True
 
+		string = None
 		if line[6:12] == '-super':
 			# invoke-super {p0, p1}, Landroid/app/Activity;->onCreate(Landroid/os/Bundle;)V  
-			string = showRet + 'super.' + function + '('
+			string = 'super.' + function + '('
 			del params[0]
 			string = string + self.makeParams2String(params)
 			string = string + ')'
-			self.appendMethodToFile(string)
+			self.invokeRet = string
 		elif line[6:13] == '-direct':
 			# invoke-direct {v0}, Ljava/lang/RuntimeException;-><init>()V
 			funClass = self.makeClass(part[1])
 			
-			if params[0][0:4] == 'new ' and funClass == function:
+			if funClass == function: #(params[0][0:4] == 'new ' and 
 				pass
 			else:
-				string = showRet + funClass + '.' + params[0] + '.' + function + '('
+				string = funClass + '.' + params[0] + '.' + function + '('
 				del params[-1]
 				string = string + self.makeParams2String(params)
 				string = string + ')'
-				self.appendMethodToFile(string)			
+			self.invokeRet = string	
 		elif line[6:13] == '-static':
 			# invoke-static {p1}, Landroid/text/TextUtils;->isEmpty(Ljava/lang/CharSequence;)Z
 			part3 = part[1].split(';')
 			function_class = self.makeClass(part3[0]+';')
-			string = showRet + function_class + '.' + function + '('
+			string = function_class + '.' + function + '('
 			string = string + self.makeParams2String(params)
 			string = string + ')'
-			self.appendMethodToFile(string)		
+			self.invokeRet = string
 		elif line[6:14] == '-virtual' or line[6:16] == '-interface':
 			# invoke-virtual {v2, v0}, Landroid/webkit/WebView;->loadUrl(Ljava/lang/String;)V
 			obj = params[0]
-			string = showRet + obj + '.' + function + '('
+			string = obj + '.' + function + '('
 			del params[0]
 			string = string + self.makeParams2String(params)
 			string = string + ')'
-			self.appendMethodToFile(string)
+			self.invokeRet = string
 		else:
 			self.debug('<error> invoke :' + line)
-			
-	def noused_doConst(self, line):
-		# const/high16 v2, 0x7f03
-		# const-string v2, ", "
-		line = line.replace(', ', ',')
-		
-		part = line.split()
-		part2 = part[1].split(',')
-		var = part2[0]
-		value = part2[1]
-		self.setRegister(var, value)
-		pass   
+		if self.invokeRet != None:
+			if showRet == False:
+				self.appendMethodToFile(self.invokeRet)
+				self.invokeRet = None
+			else:
+				self.invokeInfo = self.getMethodCount()
+				self.lineDelay = True
 
 	def doConst(self, line):
 		# const/high16 v2, 0x7f03
@@ -613,6 +631,8 @@ class smali2java():
 		
 		var = part2[1]
 		value = part[1].strip()
+#		if value[0] == '-':
+#			value = '(' + value + ')'
 		self.setRegister(var, value)
 		pass   
 
@@ -672,12 +692,12 @@ class smali2java():
 			self.setRegister(value, obj + '[' + aid + ']')
 			
 	def doMove(self, line):
-		
 		if line[4:11] == '-result':
 		# move-result-object v2
 			part = line.split()
 			ret = part[1]
-			self.setRegister(ret, 'ret')
+			self.setRegister(ret, self.invokeRet)
+			self.invokeRet = None
 			pass
 		elif line[4:14] == '-exception':
 			pass
@@ -693,7 +713,8 @@ class smali2java():
 	def doReturn(self, line):
 		if line[6:11] == '-void':
 			# return-void
-			string = 'return'
+			string = 'return;'
+			string = string + ' //:return::'
 			self.appendMethodToFile(string)
 		else:
 			part = line.split()
@@ -701,7 +722,8 @@ class smali2java():
 			if (len(part) > 1):
 				ret = part[1]
 				ret = self.getRegister(ret)
-				string = 'return ' + ret
+				string = 'return ' + ret +';'
+				string = string + ' //:return::'
 				self.appendMethodToFile(string)
 	
 	def doGoto(self, line):
@@ -709,6 +731,7 @@ class smali2java():
 		label = part[1]
 		string = 'goto '
 		string = string + label
+		string = string + ' //:goto::' + label
 		self.appendMethodToFile(string)
 	
 	def doNew(self, line):
@@ -743,7 +766,13 @@ class smali2java():
 
 		compare = self.compare[part[0][3:5]]
 		
-		string = 'if (' + c0 + ' ' + compare + ' ' + c1 + ') ' +'goto ' + label
+		string = 'if (' + c0 + ' ' + compare + ' ' + c1 + '){'
+		self.appendMethodToFile(string)
+		self.outputShift = self.outputShift + 1
+		string = 'goto ' + label + ';'
+		self.appendMethodToFile(string)
+		self.outputShift = self.outputShift - 1
+		string = '}'
 		self.appendMethodToFile(string)
 		
 	def doCheck(self, line):
@@ -768,15 +797,22 @@ class smali2java():
 			p1 = self.getRegister(part[1])
 			p2 = self.getRegister(part[2])
 		elif part[0].find('lit') > 0:
+		#add-int/lit8 v9, v8, 0x1
 			ret = part[1]
-			p1 = self.getRegister(part[1])
-			p2 = part[2]		
+			p1 = self.getRegister(part[2])
+			p2 = part[3]
+#			if p2[0] == '-':
+#				p2 = '('+p2+')'		
 		else:
 			ret = part[1]
 			p1 = self.getRegister(part[2])
 			p2 = self.getRegister(part[3])
 			
 		calculate = self.calculate[part2[0]]
+		if calculate == '+' and p2[0] == '-':
+			calculate = '-'
+			p2 = p2[1:]		
+		
 		self.setRegister(ret, '(' + p1 + ' ' + calculate + ' ' + p2 + ')')
 
 	def doCalculate2(self, line):
@@ -788,9 +824,20 @@ class smali2java():
 		var = part[1]
 		value = self.getRegister(part[2])
 		calculate = self.calculate[part2[0]]
-		
+
 		self.setRegister(var, '(' + calculate + value + ')')
 
+
+	def doCmp(self, line):
+		#cmpl-float v13, v11, v7
+		line = line.replace(',', ' ')
+		part = line.split()
+		reg = part[1]
+		value1 = self.getRegister(part[2])
+		value2 = self.getRegister(part[3])
+		self.setRegister(reg, '(' + value1 + '>' + value2 + '?1:' + value1 + '<' + value2 + '?-1:0)')
+		
+		
 
 	def doSwitch(self, line):
 		# sparse-switch v1, :sswitch_data_0
@@ -803,8 +850,9 @@ class smali2java():
 		
 		string = 'switch (' + var + ')' + '{'
 		
+			
 		self.appendMethodToFile(string)
-		self.switchInfo[data] = self.getMethodCount()
+		self.switchInfo[data] = self.getMethodCount() + 1
 	
 	def doSwitchCase(self, line):
 		line = line.replace(' ', '')
@@ -853,7 +901,34 @@ class smali2java():
 		string = 'throw ' + value
 		self.appendMethodToFile(string)
 		
+	def doInstanceOf(self, line):
+		# instance-of v8, v7, Landroid/widget/TextView;
+		line = line.replace(',', '')
+		part = line.split()
+		reg = part[1]
+		value = self.getRegister(part[2])
+		c = self.makeClass(part[3])
+		
+		self.setRegister(reg, '(' + value + ' instanceof ' + c + ')')
+		pass
 
+	def doMonitor(self, line):
+		#monitor-enter p0
+		part = line.split()
+		obj = self.getRegister(part[1])
+		if line[7:13] == '-enter':
+#			string = 'synchronized(' + obj + '){'
+#			self.appendMethodToFile(string)
+#			self.outputShift = self.outputShift + 1
+			pass
+		elif line[7:12] == '-exit':
+#			self.outputShift = self.outputShift - 1
+#			string = '}'
+#			self.appendMethodToFile(string)
+			pass
+		else:
+			self.debug('<error monitor> ' + line)
+		
 
 def listfile(dirname):
 	files = []
@@ -880,26 +955,27 @@ def smaliToJava(smali, java):
 	sm = smali2java()
 	
 	for line in fileSmali.readlines():
-		try:
+		#try:
 			sm.doTranslate(line)
-		except:
-			pass
+		#except:
+		#	pass
 	sm.doTranslateEnd()
 	sm.outputToFile(fileJava)
 	fileSmali.close()	
 	
 if __name__ == "__main__":
 	if len(sys.argv) == 2:
-		dir = sys.argv[1]
+		dirs = sys.argv[1]
 	else:
 		print 'smali2java <dir>'
 		print 'version: 1.00'
 		exit()
 		
-	list = listfile(dir)
+	lists = listfile(dirs)
 	
-	for smali in list:
+	for smali in lists:
 		if smali[-6:] == '.smali':
 			print 'FileName:' + smali
 			java = smali.replace('.smali', '.java')
 			smaliToJava(smali, java)
+			
