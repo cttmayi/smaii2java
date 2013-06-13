@@ -1891,7 +1891,7 @@ if __name__ == "__main__":
         dirj = dirs
     else:
         print 'smali2java [input dir] [output dir]'
-        print 'version: 1.00'
+        print 'version: 1.10'
         #exit()
         dirs = 'smali'
         dirj = 'smali'
