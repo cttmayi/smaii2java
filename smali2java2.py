@@ -584,13 +584,21 @@ class smali2java2():
             self.javaOps = {}
             self.registers = {}
             
-        elif line[1:10] == 'parameter': # fix
+        elif line[1:10] == 'parameter':
             # .parameter "x0"
             part = line.split()
+            print part
             if len(part) > 1:
                 para = part[1][1:-1]
                 self.javaMethod.addParam(para)
-
+                
+        elif line[1:6] == 'param': 
+            #.param p0, "feedbackType"    # I   @baksmali
+            line = line.replace(',', '')
+            part = line.split()
+            if len(part) > 2:
+                para = part[2][1:-1]
+                self.javaMethod.addParam(para)
         elif line[1:9] == 'prologue': # fix
             pass
         elif line[1:11] == 'end method': # fix
@@ -605,8 +613,12 @@ class smali2java2():
             pass
         elif line[1:6] == 'local' or line[1: 14] == 'restart local':
             # .local v0, bundle:Landroid/os/Bundle;
-            # .local v0, "bundle":Landroid/os/Bundle; for baksmali
+            # .local v0, "bundle":Landroid/os/Bundle;   @ baksmali
+            #.restart local v25    # "i":I              @ baksmli
+            orgline = line
             line = line.replace(',',' ')
+            line = line.replace('#',' ')
+            line = line.replace('"','')
             part = line.split()
             mode = False
             if line[1:8] == 'restart':
@@ -638,7 +650,7 @@ class smali2java2():
                             javaOpl.setLocal(c, var, mode)
                             self.javaMethod.addLocal(c, var)
                 else:
-                    print '<error dot>' + line
+                    print '<error local>' + orgline
 
         elif line[1:10] == 'end local':
             # .end local v0           #cityName:Ljava/lang/String;
@@ -687,6 +699,9 @@ class smali2java2():
             javaOpl.addInput(labelCatch)
             self.javaMethod.addOp(javaOpl)
         elif line[1:7] == 'source':
+            pass
+        
+        elif line[1:10] == 'registers':
             pass
         else:
             self.debug('<error dot>' + line)
@@ -1636,7 +1651,15 @@ class smali2java2():
                 p2 = self.toFloat(inputs[2])
             else:
                 p1 = (inputs[1])
-                p2 = (inputs[2])                
+                p2 = (inputs[2])
+            
+            
+            if len(p1) == 0:
+                print op.input[0]
+                print inputs[1]
+                print inputs[2]
+                
+            
             if p1[0] == '-':
                 p1 = '(' + p1 + ')'
             if p2[0] == '-':
@@ -1827,15 +1850,15 @@ class smali2java():
             fileParent.close()
         
         for line in fileSmali.readlines():
-    #        try:
+            try:
                 sm.doTranslate(line)
-    #        except:
-    #            print line
-    #            print sys.exc_info()[0]
-    #            print sys.exc_info()[1]                        
-    #            fileSmali.close()
-    #            fileJava.close()
-    #            exit()
+            except:
+                print line
+                print sys.exc_info()[0]
+                print sys.exc_info()[1]                        
+                fileSmali.close()
+                fileJava.close()
+                exit()
     
         sm.outputToFile(fileJava)
         fileSmali.close()
