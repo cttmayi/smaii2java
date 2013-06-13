@@ -1,6 +1,9 @@
 #import re
 import os
 import sys
+import string
+import struct
+
 
 
 class javaOp():
@@ -75,12 +78,16 @@ class javaSwitch():
 class javaLabel():
     def __init__(self, name):
         self.name = name
+        self.catch = None
     
     def setStart(self, start):
         self.start = start
         
     def setEnd(self, end):
         self.end = end
+    
+    def setCatch(self, catch):
+        self.catch = catch
         
 
 
@@ -100,7 +107,7 @@ class javaMethod():
 
         self.tryCatch = []
 
-        self.local = []        
+        self.local = []
         
         pass
     
@@ -121,6 +128,9 @@ class javaMethod():
 
     def addLabel(self, name, data):
         self.label[name] = data
+
+    def getLabel(self, name):
+        return self.label[name]
 
     def getOpCount(self):
         return len(self.op)
@@ -171,6 +181,7 @@ class javaClass():
     def addField(self, name, type, value = None):
         field = javaField(name, type, value)
         self.field.append(field)
+        return field
     
     def addMethod(self, method):
         self.method.append(method)
@@ -178,7 +189,8 @@ class javaClass():
 class javaRegister():
     def __init__(self):
         self.register = {}
-        self.local = {}        
+        self.local = {}
+        self.const = {}   
 
     def getRegister(self, reg):
         if self.register.has_key(reg) and self.register[reg] != None:
@@ -191,14 +203,20 @@ class javaRegister():
             tregs.append(self.getRegister(reg))
         return tregs
     
-    def setRegister(self, reg, value, local = None):
+    def setRegister(self, reg, value, local = None, const = False):
         if not self.isLocal(reg) or local != None:
             self.register[reg] = value
+            self.const[reg] = const
 
         if local == True:
             self.local[reg] = True
         elif local == False:
             self.local[reg] = False
+
+    def clearRegister(self):
+        for key in self.register.iterkeys():
+            if (not (self.isLocal(key) or self.isConst(key))):
+                self.register[key] = key
 
     def getLocal(self, reg):
         if reg == None:
@@ -212,6 +230,13 @@ class javaRegister():
         if not self.local.has_key(reg):
             return False
         if self.local[reg] == False:
+            return False
+        return True
+
+    def isConst(self, reg):
+        if not self.const.has_key(reg):
+            return False
+        if self.const[reg] == False:
             return False
         return True
 
@@ -272,9 +297,11 @@ class smali2java2():
         self.outputShift = 0
         
         self.annotationMode = False
-
+        self.arrayDataMode = False
+        
         self.javaOp = None
         self.javaOps = None
+        self.registers = None
         self.javaClass = None
         self.javaMethod = None
         self.javaSwitch = None
@@ -298,15 +325,22 @@ class smali2java2():
         pass   
     
     def outputToFile(self, file = None):
-
         self.outputFile = file
+
+        classes = set(self.importClass)
+        
+        for c in classes:
+            string = 'import ' + c
+#            if c != '':
+            self.toFile(string)
+
 
         string = 'class '
         #for attr in self.javaClass.attr:
         #    string = string + attr + ' '
         string = string + self.javaClass.name
         if self.javaClass.super != None:
-            string = string + ' super ' + self.javaClass.super
+            string = string + ' extends ' + self.javaClass.super
         if len(self.javaClass.implement) != 0:
             string = string + ' implement '
             for i in range(len(self.javaClass.implement)):
@@ -348,6 +382,10 @@ class smali2java2():
             if (line[0] ==  '.'):
                 self.doDot(line)
             elif (self.annotationMode == True):
+                pass
+            elif (self.arrayDataMode == True):
+                if self.javaLabel == None:
+                    exit()
                 pass
             elif self.javaSwitch != None:
                 self.doSwitchCase(line)
@@ -510,12 +548,13 @@ class smali2java2():
             else:
                 value = None 
 
-            self.javaClass.addField(field, fieldClass, value)
+            v = self.javaClass.addField(field, fieldClass, value)
             string = ''
             
             for i in range(1, len(part1)-1):
                 attr = part1[i]
-                self.javaClass.addAttr(attr)
+                v.addAttr(attr)
+                #self.javaClass.addAttr(attr)
 
         elif line[1:10] == 'end field': # fix
             pass
@@ -543,6 +582,7 @@ class smali2java2():
 
             self.javaOp = None
             self.javaOps = {}
+            self.registers = {}
             
         elif line[1:10] == 'parameter': # fix
             # .parameter "x0"
@@ -557,6 +597,7 @@ class smali2java2():
             self.javaMethod = None
             self.javaOp = None
             self.javaOps = None
+            self.registers = None
             self.curLine = None
             self.curLabel = None
 
@@ -564,12 +605,13 @@ class smali2java2():
             pass
         elif line[1:6] == 'local' or line[1: 14] == 'restart local':
             # .local v0, bundle:Landroid/os/Bundle;
+            # .local v0, "bundle":Landroid/os/Bundle; for baksmali
             line = line.replace(',',' ')
             part = line.split()
             mode = False
             if line[1:8] == 'restart':
                 del part[0]
-                mode = True
+#                mode = True
             
             if len(part) > 2:
                 part2 = part[2].split(':')
@@ -577,13 +619,24 @@ class smali2java2():
                 if var[0] == '#':
                     var = var[1:]
                 reg = part[1]
-                c = self.makeClass(part2[1])
-
-                if reg[0] != 'p':
-                    if self.javaOp.output == reg:
-                        self.javaOp.setLocal(c, var, mode)
-                        self.javaMethod.addLocal(c, var)
-
+                
+                if len(part2) > 1:
+                    part2[1] = part2[1].replace('"','')
+                    c = self.makeClass(part2[1])
+    
+                    if reg[0:2] != 'p0':
+                        if self.javaOp != None and (self.javaOp.output == reg or self.javaMethod.reg.getRegister(self.javaOp.output) == reg):
+                            self.javaOp.setLocal(c, var, mode)
+                            self.javaMethod.addLocal(c, var)
+                        else:
+                            if self.javaLabel != None and self.javaLabel.catch == reg:
+                                self.javaLabel.catch = var
+    
+                            javaOpl = javaOp('nop')
+                            javaOpl.setOutput(reg)
+                            self.javaMethod.addOp(javaOpl)
+                            javaOpl.setLocal(c, var, mode)
+                            self.javaMethod.addLocal(c, var)
             pass
         elif line[1:10] == 'end local':
             # .end local v0           #cityName:Ljava/lang/String;
@@ -592,7 +645,10 @@ class smali2java2():
             
             self.javaOp.setLocalEnd(reg)
             pass
-
+        elif line[1:11] == 'array-data':
+            self.arrayDataMode = True
+        elif line[1:15] == 'end array-data':
+            self.arrayDataMode = False
         elif line[1:11] == 'annotation':
             self.annotationMode = True
         elif line[1:15] == 'end annotation':
@@ -623,6 +679,11 @@ class smali2java2():
             labelTryStart = part[1][2:]
             labelTryEnd = part[3][1:-1]
             self.javaMethod.setTryCatch(labelTryStart, labelTryEnd, c, labelCatch)
+            
+            javaOpl = javaOp('catch')
+            javaOpl.addInput(c)
+            javaOpl.addInput(labelCatch)
+            self.javaMethod.addOp(javaOpl)
         elif line[1:7] == 'source':
             pass
         else:
@@ -633,16 +694,19 @@ class smali2java2():
         # :cond_1
         name = line[1:]
 
-
-
         self.curLabel = name
         self.javaLabel = javaLabel(name)
         self.javaMethod.addLabel(name, self.javaLabel)
         self.javaLabel.setStart(self.javaMethod.getOpCount())
-
+     
         if self.curLine != None and self.javaOp != None:
             self.javaOp.setLineEnd(True)
 #            self.javaOp = None
+        javaOpl = javaOp('nop')
+        self.javaMethod.addOp(javaOpl)   
+        javaOpl.setLabel(self.curLabel)
+
+
     
     def doCommit(self, line):
         #self.appendMethodToFile('//' + line)
@@ -652,7 +716,12 @@ class smali2java2():
         if line[0:6] == 'invoke':
             self.doInvoke(line)
         elif line[0:5] == 'const':
-            self.doConst(line)
+            if (line[6:10] == 'wide'): # 64 bit
+                self.doConst(line, 2)
+            if (line[6:12]) == 'high16':
+                self.doConst(line, 0) # 16 bit
+            else:
+                self.doConst(line, 1) # 32 bit
         elif line[0:4] == 'iget':
             self.doPutGet(line,'get')
         elif line[0:4] == 'iput':
@@ -673,6 +742,8 @@ class smali2java2():
             self.doGoto(line)
         elif line[0:3] == 'new':
             self.doNew(line)
+        elif line[0:15] == 'fill-array-data':
+            self.doFillArray(line)
         elif line[0:2] == 'if':
             self.doIf(line)
         elif line[0:5] == 'check':
@@ -695,7 +766,8 @@ class smali2java2():
         elif line[0:11] == 'instance-of':
             self.doInstanceOf(line)
         elif line[0:3] == 'nop':
-            pass
+            self.javaOp = javaOp('nop')
+            self.javaMethod.addOp(self.javaOp)  
         elif line[0:7] == 'monitor':
             self.doMonitor(line)
         else:
@@ -705,9 +777,9 @@ class smali2java2():
             # const-class vx,type_id
             self.debug('<error> command:' + line)
         
-        if self.curLabel != None and self.javaOp != None:
-            self.javaOp.setLabel(self.curLabel)
-            self.curLabel = None
+#        if self.curLabel != None and self.javaOp != None:
+#            self.javaOp.setLabel(self.curLabel)
+#            self.curLabel = None
         if self.javaOp != None and self.curLine != None:
             self.javaOp.setLine(self.curLine)
             #self.curLine = None
@@ -721,6 +793,18 @@ class smali2java2():
         c = self.makeClass(part[1])
         function = self.makeFunction(part[1])
         params = self.makeParams(part2[1][1:])
+        cs = self.makeParamsClass(part[1].split('(')[1].split(')')[0])
+        #print cs
+        
+        s = 0
+        if line[6:13] != '-static':
+            s = 1
+        
+        for i in range(len(cs)):
+            if cs[i] == 'double' or cs[i] == 'long':
+                del params[i+1+s]
+        #print params
+        
         retClass = line.split(')')[-1]
         
         showRet = False
@@ -734,30 +818,47 @@ class smali2java2():
             self.javaOp.addInput('super')
             self.javaOp.addInput(function)
             del params[0]
-            for param in params:
-                self.javaOp.addInput(param)
+            #for param in params:
+            #    self.javaOp.addInput(param)
+            for i in range(len(cs)):
+                self.javaOp.addInput(cs[i])
+                self.javaOp.addInput(params[i])    
+                
             self.javaOp.setType(retClass)
             self.javaMethod.addOp(self.javaOp)
             
         elif line[6:13] == '-direct': # fix
             # invoke-direct {v0}, Ljava/lang/RuntimeException;-><init>()V
+            for i in range(len(params)):
+                if self.registers != None and self.registers.has_key(params[i]):
+                    params[i] = self.registers[params[i]]
+            self.registers = None
+            
             obj = params[0]
+            
             if (self.javaOps.has_key(obj)):
                 self.javaOp = javaOp('new-invoke')
                 self.javaOp.setOutput(self.javaOps[obj].output)
                 self.javaOp.setInput(self.javaOps[obj].input)
                 #self.javaOp = self.javaOps[obj]
-                for i in range(1,len(params)):
-                    self.javaOp.addInput(params[i])
+                #for i in range(1,len(params)):
+                #    self.javaOp.addInput(params[i])
+                del params[0]
+                for i in range(len(cs)):
+                    self.javaOp.addInput(cs[i])
+                    self.javaOp.addInput(params[i])                      
                 self.javaMethod.addOp(self.javaOp)
-            elif c == function:
-                pass
+                del self.javaOps[obj]
             else:
                 self.javaOp = javaOp('invoke')
                 self.javaOp.addInput(params[0])
                 self.javaOp.addInput(function)
-                for i in range(1,len(params)):
-                    self.javaOp.addInput(params[i])
+                #for i in range(1,len(params)):
+                #    self.javaOp.addInput(params[i])
+                del params[0]
+                for i in range(len(cs)):
+                    self.javaOp.addInput(cs[i])
+                    self.javaOp.addInput(params[i])       
                 self.javaOp.setType(retClass)
                 self.javaMethod.addOp(self.javaOp)                
                 
@@ -769,8 +870,11 @@ class smali2java2():
             self.javaOp = javaOp('invoke')
             self.javaOp.addInput(functionClass)
             self.javaOp.addInput(function)
-            for param in params:
-                self.javaOp.addInput(param)
+            #for param in params:
+            #    self.javaOp.addInput(param)
+            for i in range(len(cs)):
+                self.javaOp.addInput(cs[i])
+                self.javaOp.addInput(params[i])       
             self.javaOp.setType(retClass)
             self.javaMethod.addOp(self.javaOp)
             
@@ -782,26 +886,67 @@ class smali2java2():
             self.javaOp = javaOp('invoke')
             self.javaOp.addInput(params[0])
             self.javaOp.addInput(function)
-            for i in range(1,len(params)):
-                self.javaOp.addInput(params[i])
+            #for i in range(1,len(params)):
+            #    self.javaOp.addInput(params[i])
+            del params[0]
+            for i in range(len(cs)):
+                self.javaOp.addInput(cs[i])
+                self.javaOp.addInput(params[i])                  
+                
             self.javaOp.setType(retClass)
             self.javaMethod.addOp(self.javaOp)
 
         else:
             self.debug('<error> invoke :' + line)
 
-    def doConst(self, line):
+    def nextReg(self, reg):
+        n = int(reg[1:])
+        n = n + 1
+        ret = reg[0] + str(n)
+        return ret
+        
+    def getValue(self, value, bit):
+        if value[0] != "0" and value[0] != "-":
+            return value
+        if value[-1] == 'L':
+            value = value[0:-1]
+        ret = int(value, 16) >> (bit * 8)
+        if ret < 0:
+            ret = - ((-ret) & 0xFFFFFFFF)
+        else:
+            ret = ret & 0xFFFFFFFF
+        #return hex(ret)[0:-1]
+        return str(ret)
+        
+         
+
+    def doConst(self, line, bit):
         # const/high16 v2, 0x7f03
         # const-string v2, ", "
         part = line.split(',', 1)
         part2 = part[0].split()
         var = part2[1]
-        value = part[1].strip()
+        part[1] = part[1].strip()
+        if bit == 0:
+            if part[1][0] == '-':
+                value = 0x10000 + int(part[1], 16)
+                value = hex(value) + '0000'
+            else:
+                value = part[1].strip() + '0000'
+            bit = 1
+        else:
+            value = part[1].strip()
         
-        self.javaOp = javaOp('const')
-        self.javaOp.setOutput(var)
-        self.javaOp.addInput(value)
-        self.javaMethod.addOp(self.javaOp)
+        for i in range(bit):
+            v = self.getValue(value, i)
+            self.javaOp = javaOp('const')
+            self.javaOp.setOutput(var)
+            self.javaOp.addInput(v)
+            self.javaOp.addInput(bit)
+            self.javaMethod.addOp(self.javaOp)
+            var = self.nextReg(var)
+
+        
 
         
     def doPutGet(self, line, pg): # fix
@@ -875,10 +1020,18 @@ class smali2java2():
         # move-exception v0
             part = line.split()
             ret = part[1]
-            self.javaOp = javaOp('new')
-            self.javaOp.setOutput(ret)
-            self.javaOp.addInput('Exception')
-            self.javaMethod.addOp(self.javaOp)
+            
+            javaLabel = self.javaMethod.getLabel(self.curLabel)
+            
+            if javaLabel != None:
+                javaLabel.setCatch(ret)
+            else:
+                print '<error exception>'
+                print self.javaOp.op
+#                self.javaOp = javaOp('move-exception')
+#                self.javaOp.setOutput(ret)
+#                self.javaOp.addInput('exception')
+#                self.javaMethod.addOp(self.javaOp)
             pass
         else:
         # move-object/from16 v0, p0    
@@ -890,6 +1043,11 @@ class smali2java2():
             self.javaOp.setOutput(var)
             self.javaOp.addInput(value)
             self.javaMethod.addOp(self.javaOp)
+            if self.registers != None:
+                self.registers[var] = value
+            
+            
+
             
     def doReturn(self, line):
         if line[6:11] == '-void':
@@ -913,6 +1071,9 @@ class smali2java2():
         part = line.split(':')
         label = part[1]
         
+        if self.javaOp != None:
+            self.javaOp.setLineEnd(True)
+        
         self.javaOp = javaOp('goto')
         self.javaOp.addInput(label)
         self.javaMethod.addOp(self.javaOp)
@@ -935,6 +1096,7 @@ class smali2java2():
             self.javaMethod.addOp(self.javaOp)
 
             self.javaOps[var] = self.javaOp
+            self.registers = {}
             
         elif line[3:9] == '-array':
         # new-array v1, v1, [Ljava/lang/String;
@@ -947,7 +1109,18 @@ class smali2java2():
             self.javaOp.addInput(c)
             self.javaOp.addInput(size)
             self.javaMethod.addOp(self.javaOp)            
-            
+    
+    def doFillArray(self, line):
+        # fill-array-data v0, :array_0
+        line = line.replace(',', '')
+        part = line.split()
+        
+        if self.javaOp != None and self.javaOp.op == 'anew':
+            label = part[2][1:]
+            self.javaOp.addInput(label)
+        else:
+            print '<error> fill array'
+        
             
     
     def doIf(self, line):
@@ -1001,13 +1174,18 @@ class smali2java2():
         part = line.split()
         part2 = part[0].split('-')
         
+        if (part[0].find('float') > 0):
+            fpart = '-float'
+        else:
+            fpart = ''
+        
         if part[0].find('2addr') > 0:
             ret = part[1]
             cal = part2[0]
             p1 = (part[1])
             p2 = (part[2])
             
-            self.javaOp = javaOp('cal2')
+            self.javaOp = javaOp('cal2' + fpart)
             self.javaOp.setOutput(ret)
             self.javaOp.addInput(cal)
             self.javaOp.addInput(p1)
@@ -1021,7 +1199,7 @@ class smali2java2():
             p1 = (part[2])
             p2 = part[3]
             
-            self.javaOp = javaOp('cal2-lit')
+            self.javaOp = javaOp('cal2-lit' + fpart)
             self.javaOp.setOutput(ret)
             self.javaOp.addInput(cal)
             self.javaOp.addInput(p1)
@@ -1033,7 +1211,7 @@ class smali2java2():
             p1 = (part[2])
             p2 = (part[3])
         
-            self.javaOp = javaOp('cal2')
+            self.javaOp = javaOp('cal2' + fpart)
             self.javaOp.setOutput(ret)
             self.javaOp.addInput(cal)
             self.javaOp.addInput(p1)
@@ -1124,8 +1302,8 @@ class smali2java2():
         line = line.replace(',', '')
         part = line.split()
         part2 = part[0].split('-to-')
-        fdata = part[1]
-        tdata = part[2]
+        tdata = part[1]
+        fdata = part[2]
         ttype = part2[1]
         
         self.javaOp = javaOp('to')
@@ -1242,16 +1420,19 @@ class smali2java2():
 
         self.outputFile.write(string + '\n')
 
-    def opToShow(self, method, op, output, string):
+    def opToShow(self, method, op, output, string, const = False):
         if (op.isLocal()):
             cvar = op.local[1]
-            string =  cvar + ' = ' + string + ';'
+            if cvar != string:
+                string =  cvar + ' = ' + string + ';'
+            else:
+                string = ''
             method.reg.setRegister(op.output, cvar, True)            
         elif (op.isLineEnd()):
             string = output + ' = ' + string + ';'
             method.reg.setRegister(op.output, None)
         else:
-            method.reg.setRegister(op.output, string)
+            method.reg.setRegister(op.output, string, None, const)
             string = ''
         return string
 
@@ -1265,61 +1446,122 @@ class smali2java2():
             method.reg.setRegister(op.output, None)
         return string
     
+    def float2mbf4byte(self, f):
+        ieee = struct.pack('f', f)
+        sbin = [0] * 4;
+        for i in range(4):
+            sbin[i] = ord(ieee[i])
+        return sbin
+    
+    
+    def toFloat(self, strs):
+        flag = ''
+        if strs[0] == '-':
+            return strs
+            strs = strs[1:-1]
+            flag = '-'
+            
+        
+        if strs.isdigit():
+            num = (int(strs))
+            num = [(num & 0xFF) >> 0, (num & 0xFF00) >> 8, (num & 0xFF0000) >> 16, (num & 0xFF000000) >> 24]
+            strs = ''.join(map(chr, num))
+            #return format(struct.unpack('f', strs)[0], '.2f')
+            #return '{0:f}'.format(struct.unpack('f', strs)[0])
+            return str(struct.unpack('f', strs)[0])
+        else:
+            return flag + strs
+    
+    
     def op2java(self, method, ops, oid):
         op = ops[oid]
+        
+        inputs = method.reg.getRegisters(op.input)
+        outputl = method.reg.getLocal(op.output)
+        
+        regs = op.getLocalEnd()
+        for reg in regs:
+            method.reg.setRegister(reg, None, False)          
+        
         if op.label != None:
             mode = method.isTryLabel(op.label)
             if mode == None:
-                self.toFile(op.label + ':', 0)
+                if op.label[0:13] != 'sswitch_data_' and op.label[0:13] != 'pswitch_data_':
+                    self.toFile(op.label + ':', 0)
+                if op.label[0:5] == 'cond_':
+                    method.reg.clearRegister()
             elif mode == True:
                 self.toFile('try{')
                 self.toFileShift(1)
             elif mode == False:
                 tryCatch = method.getTryCatch(op.label)
                 self.toFileShift(-1)
-                self.toFile('} catch ('+ tryCatch[2] + '){')
-                self.toFileShift(1)
-                self.toFile('goto ' + tryCatch[3] + ';')
-                self.toFileShift(-1)
                 self.toFile('}')
         if op.line != None and method.curLine != op.line:
-            self.toFile('//line ' + op.line)
+            self.toFile('//line ' + op.line, 0)
             method.curLine = op.line
             
-        inputs = method.reg.getRegisters(op.input)
-        outputl = method.reg.getLocal(op.output)
+      
         
         string = None
-        if op.op == 'sget':
-            string = inputs[0] + '.' + inputs[1]
+        if op.op == 'catch':
+            c = op.input[0]
+            label = op.input[1]
+            
+            javaLabel = method.getLabel(label)
+            
+            if javaLabel.catch == None:
+                var = 'exp'
+            else:
+                var = method.reg.getLocal(javaLabel.catch)
+
+            self.toFile('catch ('+ c + ' ' + var + '){')
+            self.toFileShift(1)
+            self.toFile('goto ' + label + ';')
+            self.toFileShift(-1)
+            #self.toFile('}')
+            string = '}'        
+            pass
+        elif op.op == 'sget':
+            if self.javaClass.name != inputs[0]:
+                string = inputs[0] + '.' + inputs[1]
+            else:
+                string = inputs[1]
             string = self.opToShow(method, op, outputl, string)
         elif op.op == 'sput':
-            string = inputs[0] + '.' + op.input[1] + ' = ' + inputs[2] + ';'
-        elif op.op == 'get':
-            if inputs[0] == 'this':
-                string = inputs[0] + '->' + inputs[1]
+            if self.javaClass.name != inputs[0]:
+                string = inputs[0] + '.' + op.input[1] + ' = ' + inputs[2] + ';'
             else:
-                string = inputs[0] + '.' + inputs[1]
+                string = op.input[1] + ' = ' + inputs[2] + ';'
+        elif op.op == 'get':
+            #if inputs[0] == 'this':
+            #    string = inputs[0] + '->' + inputs[1]
+            #else:
+            string = inputs[0] + '.' + inputs[1]
             string = self.opToShow(method, op, outputl, string)
         elif op.op == 'put':
-            if inputs[0] == 'this':
-                string = inputs[0] + '->' + op.input[1] + ' = ' + inputs[2] + ';'
-            else:
-                string = inputs[0] + '.' + op.input[1] + ' = ' + inputs[2] + ';'
+            #if inputs[0] == 'this':
+            #    string = inputs[0] + '->' + op.input[1] + ' = ' + inputs[2] + ';'
+            #else:
+            string = inputs[0] + '.' + op.input[1] + ' = ' + inputs[2] + ';'
         elif op.op == 'const':
             string = inputs[0]
-            string = self.opToShow(method, op, outputl, string)
+            string = self.opToShow(method, op, outputl, string, True)
         elif op.op == 'if':
             string = 'if (' + inputs[1] + ' ' + self.compare[op.input[0]] + ' ' + inputs[2] + ') ' + 'goto ' + op.input[3] + ';'
         elif op.op == 'new':
             string = ''
         elif op.op == 'new-invoke':
             string = 'new ' + op.input[0] + '('
-            for i in range(1, len(inputs)):
-                if len(inputs) != i + 1 :
-                    string = string + inputs[i] + ', '
+            for i in range(2, len(inputs), 2):
+                if inputs[i-1] == 'float':
+                    p = self.toFloat(inputs[i])
                 else:
-                    string = string + inputs[i]
+                    p = inputs[i]
+                if len(inputs) != i + 1 :
+                    string = string + p + ', '
+                else:
+                    string = string + p
             string = string + ')'            
             string = self.opToShow(method, op, outputl, string)            
         elif op.op == 'return':
@@ -1333,15 +1575,16 @@ class smali2java2():
             access = self.getAccess(op.input[1])
             #access = None
             if (access == None):
-                if inputs[0] == 'this':
-                    string = inputs[0] + '->' + op.input[1] + '('
-                else:
-                    string = inputs[0] + '.' + op.input[1] + '('
-                for i in range(2, len(inputs)):
-                    if len(op.input) != i + 1 :
-                        string = string + inputs[i] + ', '
+                string = inputs[0] + '.' + op.input[1] + '('
+                for i in range(3, len(inputs),2):
+                    if inputs[i-1] == 'float':
+                        p = self.toFloat(inputs[i])
                     else:
-                        string = string + inputs[i]
+                        p = inputs[i]
+                    if len(op.input) != i + 1 :
+                        string = string + p + ', '
+                    else:
+                        string = string + p
                 string = string + ')'
                 if op.output != None :
                     string = self.opToShow(method, op, outputl, string)
@@ -1352,9 +1595,9 @@ class smali2java2():
                         string = self.opToShow(method, op, outputl, string)                       
                 else:
                     string = inputs[-1]
-                    string = access + ' = ' + string + ';'            
-
-                
+                    string = access + ' = ' + string
+            if string != '':
+                string = string + ';' 
                 
         elif op.op == 'ifz':
             string = 'if (' + inputs[1] + ' ' + self.compare[op.input[0]] + ' ' + '0' + ') ' + 'goto ' + op.input[2] + ';'
@@ -1362,23 +1605,59 @@ class smali2java2():
             string = self.calculate[op.input[0]] + inputs[1]
             string = self.opToShow(method, op, outputl, string)
             
-        elif op.op == 'cal2-lit':
-            string = inputs[1] + ' ' + self.calculate[op.input[0]] + ' '+ op.input[2]
-            string = self.opToShow(method, op, outputl, string)
-        elif op.op == 'cal2':
-            string = inputs[1] + ' ' + self.calculate[op.input[0]] + ' '+ inputs[2]
+        elif op.op[0:8] == 'cal2-lit':
+            #print self.toFloat(inputs[0])
+            flag = self.calculate[op.input[0]]
+            #if (op.isLocal() and op.local[1] == outputl and inputs[2] == '0x1' and (flag == '+' or flag == '-')):
+            if (op.isLocal() and op.local[1] == inputs[1] and (inputs[2] == '1' or inputs[2] == '0x1') and (flag == '+' or flag == '-')):
+                string = inputs[1] + ' ' + flag + flag
+                if not op.isLineEnd():
+                    method.reg.setRegister(op.input[1], string)
+                    method.reg.setRegister(op.output, op.local[1], True)
+                    string = ''
+            else:
+                if op.op[9:14] == 'float':
+                    p1 = self.toFloat(inputs[1])
+                    p2 = self.toFloat(op.input[2])
+                else:
+                    p1 = (inputs[1])
+                    p2 = (op.input[2]) 
+                if p1[0] == '-':
+                    p1 = '(' + p1 + ')'
+                if p2[0] == '-':
+                    p2 = '(' + p2 + ')'                
+                string = p1 + ' ' + self.calculate[op.input[0]] + ' ' + p2
+                string = self.opToShow(method, op, outputl, string)
+        elif op.op[0:4] == 'cal2':
+            if op.op[5:10] == 'float':
+                p1 = self.toFloat(inputs[1])
+                p2 = self.toFloat(inputs[2])
+            else:
+                p1 = (inputs[1])
+                p2 = (inputs[2])                
+            if p1[0] == '-':
+                p1 = '(' + p1 + ')'
+            if p2[0] == '-':
+                p2 = '(' + p2 + ')'              
+            string = p1 + ' ' + self.calculate[op.input[0]] + ' ' + p2
             string = self.opToShow(method, op, outputl, string)
         elif op.op == 'switch':
             string = 'swtich(' + inputs[0] + ')' + '{'
             self.toFile(string)
             string = 'goto ' + op.input[1]
+            self.toFileShift(1)
             for case in method.switch[op.input[1]].case:
                 string = 'case ' + case[0] + ': ' + 'goto ' + case[1] + ';'
                 self.toFile(string)
+            self.toFileShift(-1)
             string = '}' 
         elif op.op == 'move':
             string = inputs[0]
             string = self.opToShow(method, op, outputl, string)
+        elif op.op == 'move-exception':
+            string = inputs[0]
+            method.reg.setRegister(op.output, string, None, False)
+            string = ''            
         elif op.op == 'check':
             string = '(' + op.input[1] + ')' + inputs[0]
             string = self.opToShow(method, op, outputl, string)
@@ -1403,14 +1682,20 @@ class smali2java2():
             string = inputs[0] + '.length()'
             string = self.opToShow(method, op, outputl, string)
         elif op.op == 'cmp':
-            string = '(' + op.input[0] + '>' + op.input[1] + '?1:' + op.input[0] + '<' + op.input[1] + '?-1:0)'
+            string = '(' + inputs[0] + '>' + inputs[1] + '?1:' + inputs[0] + '<' + inputs[1] + '?-1:0)'
             string = self.opToShow(method, op, outputl, string)
         elif op.op == 'monitor':
             string = ''
+        elif op.op == 'nop':
+            if (op.isLocal()):
+                cvar = op.local[1]
+                #string =  cvar + ' = ' + string + ';'
+                method.reg.setRegister(op.output, cvar, True) 
+            string = ''
 
-        regs = op.getLocalEnd()
-        for reg in regs:
-            method.reg.setRegister(reg, None, False)
+
+        
+
         
         if string == '':
             pass        
@@ -1457,7 +1742,7 @@ class smali2java2():
         part2 = part[1].split(',')
         c = self.makeClass(part2[2])
         field = self.makeField(part2[2])
-        self.curAccess = c + '.' + 'this->' + field
+        self.curAccess = c + '.' + 'this.' + field
 
     def doParentStaticPutGet(self, line): # fix
         # sput-object v1, Lcom/moji/mjweather/activity/AddCityActivity;->mHotCitys:[Ljava/lang/String;
@@ -1465,83 +1750,107 @@ class smali2java2():
         part = line.split()
         c = self.makeClass(part[2])
         field = self.makeField(part[2])  
-        self.curAccess = c + '.' + 'this->' + field
+        self.curAccess = c + '.' + 'this.' + field
 
-
-def listfile(dirname):
-    files = []
-    try:
-        ls=os.listdir(dirname)
-    except:
-        print 'dir access deny'
-    else:
-        for l in ls:
-            filename = os.path.join(dirname,l)
-            if(os.path.isdir(filename)):
-                filenames = listfile(filename)
-                for filename in filenames:
-                    files.append(filename)
-            else:
-                files.append(filename)
-                
-    return files        
-
-def getParent(file):
-    path =  os.path.dirname(file)
-    file =  os.path.basename(file)
-    [file, ext] = os.path.splitext(file)
+class smali2java():
     
-    p = file.split('$')[0]
-    
-    if (p != file):
-        return os.path.join(path, p + ext)
-    return None
-
-
-def smaliToJava(smali, parent, java):
-    fileSmali = open(smali)
-    fileJava = open(java, 'w')
-    
-    sm = smali2java2()
-    
-    if (parent != None):
-        fileParent = open(parent, 'r')
-        for line in fileParent.readlines():
-            sm.doParentTranslate(line)
-        fileParent.close()
-    
-    for line in fileSmali.readlines():
+    def listFile(self, dirname):
+        files = []
         try:
-            sm.doTranslate(line)
+            ls=os.listdir(dirname)
         except:
-            print line
-            fileSmali.close()
-            fileJava.close()
-            exit()
-
-    sm.outputToFile(fileJava)
-    fileSmali.close()
-    fileJava.close()
+            print 'dir access deny'
+        else:
+            for l in ls:
+                filename = os.path.join(dirname,l)
+                if(os.path.isdir(filename)):
+                    filenames = self.listFile(filename)
+                    for filename in filenames:
+                        files.append(filename)
+                else:
+                    files.append(filename)
+                    
+        return files        
     
+    def getParent(self, file):
+        path =  os.path.dirname(file)
+        file =  os.path.basename(file)
+        [file, ext] = os.path.splitext(file)
+        
+        ps = file.split('$')
+        fps = []
+        
+        for i in range(len(ps)-1):
+            p = ps[0]
+            for ii in range(1,i+1):
+                p = p + '$' + ps[ii]
+            
+            fp = os.path.join(path, p + ext)
+            if (p != file and os.path.exists(fp)):
+                fps.append(fp)
+                
+        return fps
+
+    
+    def smaliToJava(self, smali, parents, java):
+        fileSmali = open(smali)
+        fileJava = open(java, 'w')
+        
+        sm = smali2java2()
+        
+        for parent in parents:
+            fileParent = open(parent, 'r')
+            for line in fileParent.readlines():
+                sm.doParentTranslate(line)
+            fileParent.close()
+        
+        for line in fileSmali.readlines():
+    #        try:
+                sm.doTranslate(line)
+    #        except:
+    #            print line
+    #            print sys.exc_info()[0]
+    #            print sys.exc_info()[1]                        
+    #            fileSmali.close()
+    #            fileJava.close()
+    #            exit()
+    
+        sm.outputToFile(fileJava)
+        fileSmali.close()
+        fileJava.close()
+        
+    
+    def outputToDir(self, dirs, dirj):
+        lists = self.listFile(dirs)
+        
+        for smali in lists:
+            if smali[-6:] == '.smali':
+                print 'FileName:' + smali
+                java = smali.replace(dirs, dirj, 1)
+                java = java.replace('.smali', '.java', -1)
+                path = os.path.dirname(java)
+                if not os.path.isdir(path):
+                    os.makedirs(path)
+                parent = self.getParent(smali)
+                
+                self.smaliToJava(smali, parent, java)
+
 if __name__ == "__main__":
-    if len(sys.argv) == 2:
+    
+    if len(sys.argv) == 3:
         dirs = sys.argv[1]
+        dirj = sys.argv[2]
+    elif len(sys.argv) == 2:
+        dirs = sys.argv[1]
+        dirj = dirs
     else:
-        print 'smali2java <dir>'
+        print 'smali2java [input dir] [output dir]'
         print 'version: 1.00'
         #exit()
-        dirs = 'test'
+        dirs = 'smali'
+        dirj = 'smali'
         if (not os.path.exists(dirs)):
             exit()
         
-        
-        
-    lists = listfile(dirs)
-    
-    for smali in lists:
-        if smali[-6:] == '.smali':
-            print 'FileName:' + smali
-            parent = getParent(smali)
-            java = smali.replace('.smali', '.java')
-            smaliToJava(smali, parent, java)
-            
+    sj = smali2java()
+    sj.outputToDir(dirs, dirj)     
