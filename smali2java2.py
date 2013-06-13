@@ -620,6 +620,7 @@ class smali2java2():
                     var = var[1:]
                 reg = part[1]
                 
+<<<<<<< HEAD
                 if len(part2) > 1:
                     part2[1] = part2[1].replace('"','')
                     c = self.makeClass(part2[1])
@@ -637,6 +638,23 @@ class smali2java2():
                             self.javaMethod.addOp(javaOpl)
                             javaOpl.setLocal(c, var, mode)
                             self.javaMethod.addLocal(c, var)
+=======
+                c = self.makeClass(part2[1])
+
+                if reg[0:2] != 'p0':
+                    if self.javaOp != None and (self.javaOp.output == reg or self.javaMethod.reg.getRegister(self.javaOp.output) == reg):
+                        self.javaOp.setLocal(c, var, mode)
+                        self.javaMethod.addLocal(c, var)
+                    else:
+                        if self.javaLabel != None and self.javaLabel.catch == reg:
+                            self.javaLabel.catch = var
+
+                        javaOpl = javaOp('nop')
+                        javaOpl.setOutput(reg)
+                        self.javaMethod.addOp(javaOpl)
+                        javaOpl.setLocal(c, var, mode)
+                        self.javaMethod.addLocal(c, var)
+>>>>>>> ed8da9884e7eb9e6d6cfa6c80f468ce0ec5acd31
             pass
         elif line[1:10] == 'end local':
             # .end local v0           #cityName:Ljava/lang/String;
@@ -1751,9 +1769,32 @@ class smali2java2():
         c = self.makeClass(part[2])
         field = self.makeField(part[2])  
         self.curAccess = c + '.' + 'this.' + field
+<<<<<<< HEAD
+=======
+
+
+def listfile(dirname):
+    files = []
+    try:
+        ls=os.listdir(dirname)
+    except:
+        print 'dir access deny'
+    else:
+        for l in ls:
+            filename = os.path.join(dirname,l)
+            if(os.path.isdir(filename)):
+                filenames = listfile(filename)
+                for filename in filenames:
+                    files.append(filename)
+            else:
+                files.append(filename)
+                
+    return files        
+>>>>>>> ed8da9884e7eb9e6d6cfa6c80f468ce0ec5acd31
 
 class smali2java():
     
+<<<<<<< HEAD
     def listFile(self, dirname):
         files = []
         try:
@@ -1791,6 +1832,26 @@ class smali2java():
                 
         return fps
 
+=======
+    ps = file.split('$')
+    fps = []
+    
+    for i in range(len(ps)-1):
+        p = ps[0]
+        for ii in range(1,i+1):
+            p = p + '$' + ps[ii]
+        
+        fp = os.path.join(path, p + ext)
+        if (p != file and os.path.exists(fp)):
+            fps.append(fp)
+            
+    return fps
+
+
+def smaliToJava(smali, parents, java):
+    fileSmali = open(smali)
+    fileJava = open(java, 'w')
+>>>>>>> ed8da9884e7eb9e6d6cfa6c80f468ce0ec5acd31
     
     def smaliToJava(self, smali, parents, java):
         fileSmali = open(smali)
@@ -1815,6 +1876,7 @@ class smali2java():
     #            fileJava.close()
     #            exit()
     
+<<<<<<< HEAD
         sm.outputToFile(fileJava)
         fileSmali.close()
         fileJava.close()
@@ -1834,6 +1896,24 @@ class smali2java():
                 parent = self.getParent(smali)
                 
                 self.smaliToJava(smali, parent, java)
+=======
+    for parent in parents:
+        fileParent = open(parent, 'r')
+        for line in fileParent.readlines():
+            sm.doParentTranslate(line)
+        fileParent.close()
+    
+    for line in fileSmali.readlines():
+#        try:
+            sm.doTranslate(line)
+#        except:
+#            print line
+#            print sys.exc_info()[0]
+#            print sys.exc_info()[1]                        
+#            fileSmali.close()
+#            fileJava.close()
+#            exit()
+>>>>>>> ed8da9884e7eb9e6d6cfa6c80f468ce0ec5acd31
 
 if __name__ == "__main__":
     
@@ -1852,5 +1932,22 @@ if __name__ == "__main__":
         if (not os.path.exists(dirs)):
             exit()
         
+<<<<<<< HEAD
     sj = smali2java()
     sj.outputToDir(dirs, dirj)     
+=======
+    lists = listfile(dirs)
+    
+    for smali in lists:
+        if smali[-6:] == '.smali':
+            print 'FileName:' + smali
+            java = smali.replace(dirs, dirj, 1)
+            java = java.replace('.smali', '.java', -1)
+            path = os.path.dirname(java)
+            if not os.path.isdir(path):
+                os.makedirs(path)
+            parent = getParent(smali)
+            
+            smaliToJava(smali, parent, java)
+            
+>>>>>>> ed8da9884e7eb9e6d6cfa6c80f468ce0ec5acd31
