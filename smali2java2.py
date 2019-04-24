@@ -193,7 +193,7 @@ class javaRegister():
         self.const = {}   
 
     def getRegister(self, reg):
-        if self.register.has_key(reg) and self.register[reg] != None:
+        if reg in self.register.keys() and self.register[reg] != None:
             return self.register[reg]
         else:
             return reg
@@ -214,7 +214,7 @@ class javaRegister():
             self.local[reg] = False
 
     def clearRegister(self):
-        for key in self.register.iterkeys():
+        for key in self.register.keys():
             if (not (self.isLocal(key) or self.isConst(key))):
                 self.register[key] = key
 
@@ -227,14 +227,14 @@ class javaRegister():
         return reg
 
     def isLocal(self, reg):
-        if not self.local.has_key(reg):
+        if not reg in self.local.keys():
             return False
         if self.local[reg] == False:
             return False
         return True
 
     def isConst(self, reg):
-        if not self.const.has_key(reg):
+        if not reg in self.const.keys():
             return False
         if self.const[reg] == False:
             return False
@@ -318,7 +318,7 @@ class smali2java2():
         self.curAccess = None
 
     def debug(self, string):
-        print string
+        print(string)
         pass
 
     def appendMethodToFile(self, string, line = None):
@@ -587,7 +587,7 @@ class smali2java2():
         elif line[1:10] == 'parameter':
             # .parameter "x0"
             part = line.split()
-            print part
+            print(part)
             if len(part) > 1:
                 para = part[1][1:-1]
                 self.javaMethod.addParam(para)
@@ -650,7 +650,7 @@ class smali2java2():
                             javaOpl.setLocal(c, var, mode)
                             self.javaMethod.addLocal(c, var)
                 else:
-                    print '<error local>' + orgline
+                    print('<error local>' + orgline)
 
         elif line[1:10] == 'end local':
             # .end local v0           #cityName:Ljava/lang/String;
@@ -847,13 +847,13 @@ class smali2java2():
         elif line[6:13] == '-direct': # fix
             # invoke-direct {v0}, Ljava/lang/RuntimeException;-><init>()V
             for i in range(len(params)):
-                if self.registers != None and self.registers.has_key(params[i]):
+                if self.registers != None and params[i] in self.registers.keys():
                     params[i] = self.registers[params[i]]
             self.registers = None
             
             obj = params[0]
             
-            if (self.javaOps.has_key(obj)):
+            if (obj in self.javaOps.keys()):
                 self.javaOp = javaOp('new-invoke')
                 self.javaOp.setOutput(self.javaOps[obj].output)
                 self.javaOp.setInput(self.javaOps[obj].input)
@@ -1043,8 +1043,8 @@ class smali2java2():
             if javaLabel != None:
                 javaLabel.setCatch(ret)
             else:
-                print '<error exception>'
-                print self.javaOp.op
+                print('<error exception>')
+                print(self.javaOp.op)
 #                self.javaOp = javaOp('move-exception')
 #                self.javaOp.setOutput(ret)
 #                self.javaOp.addInput('exception')
@@ -1136,7 +1136,7 @@ class smali2java2():
             label = part[2][1:]
             self.javaOp.addInput(label)
         else:
-            print '<error> fill array'
+            print('<error> fill array')
         
             
     
@@ -1374,7 +1374,7 @@ class smali2java2():
 
 
     def getAccess(self, name):
-        if self.access.has_key(name):
+        if name in self.access.keys():
             return self.access[name]
         return None
 
@@ -1480,11 +1480,14 @@ class smali2java2():
             
         
         if strs.isdigit():
-            num = (int(strs))
-            num = [(num & 0xFF) >> 0, (num & 0xFF00) >> 8, (num & 0xFF0000) >> 16, (num & 0xFF000000) >> 24]
-            strs = ''.join(map(chr, num))
-            #return format(struct.unpack('f', strs)[0], '.2f')
-            #return '{0:f}'.format(struct.unpack('f', strs)[0])
+            num = (int(strs))        
+            # Python 2
+            # num = [(num & 0xFF) >> 0, (num & 0xFF00) >> 8, (num & 0xFF0000) >> 16, (num & 0xFF000000) >> 24]
+            # strs = ''.join(list(map(chr, num)))
+
+            # Python 3
+            strs = num.to_bytes(length=4, byteorder='big')
+            
             return str(struct.unpack('f', strs)[0])
         else:
             return flag + strs
@@ -1655,9 +1658,9 @@ class smali2java2():
             
             
             if len(p1) == 0:
-                print op.input[0]
-                print inputs[1]
-                print inputs[2]
+                print(op.input[0])
+                print(inputs[1])
+                print(inputs[2])
                 
             
             if p1[0] == '-':
@@ -1727,7 +1730,7 @@ class smali2java2():
         elif string != None:
             self.toFile(string)
         else:
-            print '<error show> ' + op.op
+            print('<error show> ' + op.op)
             
     def doParentTranslate(self, line):
         line = line.strip()
@@ -1784,7 +1787,7 @@ def listfile(dirname):
     try:
         ls=os.listdir(dirname)
     except:
-        print 'dir access deny'
+        print('dir access deny')
     else:
         for l in ls:
             filename = os.path.join(dirname,l)
@@ -1804,7 +1807,7 @@ class smali2java():
         try:
             ls=os.listdir(dirname)
         except:
-            print 'dir access deny'
+            print('dir access deny')
         else:
             for l in ls:
                 filename = os.path.join(dirname,l)
@@ -1853,9 +1856,9 @@ class smali2java():
             try:
                 sm.doTranslate(line)
             except:
-                print line
-                print sys.exc_info()[0]
-                print sys.exc_info()[1]                        
+                print(line)
+                print(sys.exc_info()[0])
+                print(sys.exc_info()[1])                        
                 fileSmali.close()
                 fileJava.close()
                 exit()
@@ -1870,7 +1873,7 @@ class smali2java():
         
         for smali in lists:
             if smali[-6:] == '.smali':
-                print 'FileName:' + smali
+                print('FileName:' + smali)
                 java = smali.replace(dirs, dirj, 1)
                 java = java.replace('.smali', '.java', -1)
                 path = os.path.dirname(java)
@@ -1890,8 +1893,8 @@ if __name__ == "__main__":
         dirs = sys.argv[1]
         dirj = dirs
     else:
-        print 'smali2java [input dir] [output dir]'
-        print 'version: 1.10'
+        print('smali2java [input dir] [output dir]')
+        print('version: 1.10')
         #exit()
         dirs = 'smali'
         dirj = 'smali'
