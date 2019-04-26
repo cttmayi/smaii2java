@@ -15,8 +15,6 @@ class JavaOp:
         self.local = None  # [reg, type, localName, restart]
         self.localEnd = []
 
-        pass
-
     def set_output(self, output):
         self.output = output
 
@@ -104,7 +102,7 @@ class JavaMethod:
         self.reg = JavaRegister()
         self.cur_line = None
 
-        self.tryCatch = []
+        self.try_catch = []
 
         self.local = []
 
@@ -135,19 +133,19 @@ class JavaMethod:
         return len(self.op)
 
     def set_try_catch(self, label_start, label_end, exp_class, label_catch):
-        self.tryCatch.append([label_start, label_end, exp_class, label_catch])
+        self.try_catch.append([label_start, label_end, exp_class, label_catch])
 
     def get_try_catch(self, label_end):
-        for tryCatch in self.tryCatch:
+        for tryCatch in self.try_catch:
             if tryCatch[1] == label_end:
                 return tryCatch
         return None
 
     def is_try_label(self, label):
-        for tryCatch in self.tryCatch:
-            if tryCatch[0] == label:
+        for try_catch in self.try_catch:
+            if try_catch[0] == label:
                 return True
-            if tryCatch[1] == label:
+            if try_catch[1] == label:
                 return False
         return None
 
