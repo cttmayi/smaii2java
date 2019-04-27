@@ -1,5 +1,2 @@
-classes/
 smali/
 .*
-build.bat
-setup.py
