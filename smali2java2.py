@@ -520,7 +520,7 @@ class SmaliFile:
         return cs
 
     def do_dot(self, line):
-        if line[1:5] == 'line':
+        if line.startswith('line', 1):
             part = line.split()
             number = part[1]
             if self.cur_line is not None and self.java_op is not None:
