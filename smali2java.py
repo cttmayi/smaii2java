@@ -2,6 +2,8 @@ import os
 import struct
 import sys
 
+import re
+import re_gra
 
 class JavaOp:
     def __init__(self, op):
@@ -241,6 +243,8 @@ class JavaRegister:
 
 
 class SmaliFile:
+    PATTERN_SPLIT = '[ ,]+'
+
     def __init__(self, file_smali):
         self.file_smali = file_smali
         self.import_class = []
@@ -412,7 +416,7 @@ class SmaliFile:
             elif self.java_access is not None:
                 self.do_parent_command(line)
 
-    def make_class(self, part, is_add=True):
+    def to_java_class_name(self, part, is_add=True):
         ret = '<error>'
         obj = False
         array = 0
@@ -453,7 +457,7 @@ class SmaliFile:
         func = part[start:end]
         if func == '<init>':
             part2 = part.split(';')
-            cls = self.make_class(part2[0] + ';')
+            cls = self.to_java_class_name(part2[0] + ';')
             func = cls
 
         return func
@@ -506,221 +510,144 @@ class SmaliFile:
                     start = i
                 else:
                     cls = part[i - array:i + array + 1]
-                    cls = self.make_class(cls)
+                    cls = self.to_java_class_name(cls)
                     cs.append(cls)
                     obj = False
                     array = 0
             else:
                 if part[i] == ';':
                     cls = part[start - array:i + 1]
-                    cls = self.make_class(cls)
+                    cls = self.to_java_class_name(cls)
                     cs.append(cls)
                     obj = False
                     array = 0
         return cs
 
     def do_dot(self, line):
-        if line.startswith('line', 1):
-            part = line.split()
-            number = part[1]
-            if self.cur_line is not None and self.java_op is not None:
-                self.java_op.set_line_end(True)  # self.JavaOp = None
-            self.cur_line = number
-
-        elif line.startswith('class', 1):  # fix
-            part = line.split()
-            name = self.make_class(part[-1], False)
-            self.java_class = JavaClass(name)
-
-            for i in range(1, len(part) - 1):
-                attr = part[i]
-                self.java_class.add_attr(attr)
-
-        elif line.startswith('super', 1):  # fix
-            # .super Landroid/text/TextWatcher;
-            part = line.split()
-            name = self.make_class(part[-1])
-
-            self.java_class.set_super(name)
-
-        elif line.startswith('implements', 1):  # fix
-            # .implements Landroid/text/TextWatcher;
-            part = line.split()
-            name = self.make_class(part[-1])
-            self.java_class.add_implement(name)
-
-        elif line.startswith('field', 1):  # fix
-            # .field private static final COLUMN_INDEX_FIRST:I = 0x0
-            part = line.split('=')
-
-            part1 = part[0].strip().split()
-            part2 = part1[-1].split(':')
-            field = part2[0]
-            field_class = self.make_class(part2[1])
-            if len(part) == 2:
-                value = part[1].strip()
-            else:
+        op = re_gra.dot_to(line)
+        if op is not None:
+            cmd = op['CMD']
+            if cmd == '.line':
+                number = op['NUM']
+                if self.cur_line is not None and self.java_op is not None:
+                    self.java_op.set_line_end(True)
+                self.cur_line = number
+            elif cmd == '.class':
+                self.java_class = JavaClass(op['CLS'])
+                for attr in op['ATTR']:
+                    self.java_class.add_attr(attr)
+            elif cmd == '.super':
+                name = self.to_java_class_name(op['CLS'])
+                self.java_class.set_super(name)
+            elif cmd == '.source':
+                pass
+            elif cmd == '.implements':
+                name = self.to_java_class_name(op['CLS'])
+                self.java_class.add_implement(name)
+            elif cmd == '.field':
+                var = op['VAR']
+                vt = self.to_java_class_name(op['VT'])
                 value = None
-
-            v = self.java_class.add_field(field, field_class, value)
-
-            for i in range(1, len(part1) - 1):
-                attr = part1[i]
-                v.add_attr(attr)  # self.JavaClass.add_attr(attr)
-
-        elif line.startswith('end field', 1):  # fix
-            pass
-        elif line.startswith('method', 1):  # fix
-            # .method public static main([Ljava/lang/String;)V
-            part = line.split()
-            part2 = part[-1].split('(')
-            part3 = part2[1].split(')')
-            if part2[0] != '<init>':
-                func_name = part2[0]
-            else:
-                func_name = self.java_class.name
-            fun_types = self.make_params_class(part3[0])
-            fun_ret = self.make_class(part3[1])
-
-            self.java_method = JavaMethod(func_name, fun_ret)
-            self.java_class.add_method(self.java_method)
-
-            for i in range(1, len(part) - 1):
-                attr = part[i]
-                self.java_method.add_attr(attr)
-
-            for tpye in fun_types:
-                self.java_method.add_param_type(tpye)
-
-            self.java_op = None
-            self.java_ops = {}
-            self.registers = {}
-
-        elif line[1:10] == 'parameter':
-            # .parameter "x0"
-            part = line.split()
-            print(part)
-            if len(part) > 1:
-                para = part[1][1:-1]
-                self.java_method.add_param(para)
-
-        elif line[1:6] == 'param':
-            # .param p0, "feedbackType"    # I   @baksmali
-            line = line.replace(',', '')
-            part = line.split()
-            if len(part) > 2:
-                para = part[2][1:-1]
-                self.java_method.add_param(para)
-        elif line.startswith('end param', 1):
-            pass
-        elif line.startswith('prologue', 1):  # fix
-            pass
-        elif line.startswith('end method', 1):  # fix
-            self.java_method = None
-            self.java_op = None
-            self.java_ops = None
-            self.registers = None
-            self.cur_line = None
-            self.cur_label = None
-
-        elif line.startswith('locals', 1):
-            pass
-        elif line.startswith('local', 1) or line.startswith('restart local', 1):
-            # .local v0, bundle:Landroid/os/Bundle;
-            # .local v0, "bundle":Landroid/os/Bundle;   @ baksmali
-            # .restart local v25    # "i":I              @ baksmli
-            org_line = line
-            line = line.replace(',', ' ')
-            line = line.replace('#', ' ')
-            line = line.replace('"', '')
-            part = line.split()
-            mode = False
-            if line.startswith('restart', 1):
-                del part[0]
-            #                mode = True
-
-            if len(part) > 2:
-                part2 = part[2].split(':')
-                var = part2[0]
-                if var[0] == '#':
-                    var = var[1:]
-                reg = part[1]
-
-                if len(part2) > 1:
-                    part2[1] = part2[1].replace('"', '')
-                    cls = self.make_class(part2[1])
-
-                    if reg[0:2] != 'p0':
-                        if self.java_op is not None and (
-                                self.java_op.output == reg or self.java_method.reg.get_register(
-                                self.java_op.output) == reg):
-                            self.java_op.set_local(cls, var, mode)
-                            self.java_method.add_local(cls, var)
-                        else:
-                            if self.java_label is not None and self.java_label.catch == reg:
-                                self.java_label.catch = var
-
-                            java_opl = JavaOp('nop')
-                            java_opl.set_output(reg)
-                            self.java_method.add_op(java_opl)
-                            java_opl.set_local(cls, var, mode)
-                            self.java_method.add_local(cls, var)
+                if 'VAL' in op:
+                    value = op['VAL']
+                field = self.java_class.add_field(var, vt, value)
+                for attr in op['ATTR']:
+                    field.add_attr(attr)  # self.JavaClass.add_attr(attr)
+            elif cmd == '.end field':
+                pass
+            elif cmd == '.method':
+                if op['FUNC'] != '<init>':
+                    func_name = op['FUNC']
                 else:
-                    print('<error local>' + org_line)
+                    func_name = self.java_class.name
+                fun_types = self.make_params_class(op['PARAMS'])
+                fun_ret = self.to_java_class_name(op['FT'])
+                self.java_method = JavaMethod(func_name, fun_ret)
+                self.java_class.add_method(self.java_method)
+                for attr in op['ATTR']:
+                    self.java_method.add_attr(attr)
+                for fun_type in fun_types:
+                    self.java_method.add_param_type(fun_type)
+                self.java_op = None
+                self.java_ops = {}
+                self.registers = {}
+            elif cmd == '.parameter':
+                self.java_method.add_param(op['VAR'])
+            elif cmd == '.param':
+                if 'VAR' in op:
+                    self.java_method.add_param(op['VAR'])
+            elif cmd == '.end param':
+                pass
+            elif cmd == '.prologue':
+                pass
+            elif cmd == '.end method':
+                self.java_method = None
+                self.java_op = None
+                self.java_ops = None
+                self.registers = None
+                self.cur_line = None
+                self.cur_label = None
+            elif cmd == '.locals':
+                pass
+            elif cmd == '.local' or cmd == '.restart local':
+                mode = False
+                var = op['VAR']
+                reg = op['REG']
+                cls = self.to_java_class_name(op['CLS'])
+                if reg[0:2] != 'p0':
+                    if self.java_op is not None and (
+                            self.java_op.output == reg or self.java_method.reg.get_register(
+                            self.java_op.output) == reg):
+                        self.java_op.set_local(cls, var, mode)
+                        self.java_method.add_local(cls, var)
+                    else:
+                        if self.java_label is not None and self.java_label.catch == reg:
+                            self.java_label.catch = var
+                        java_opl = JavaOp('nop')
+                        java_opl.set_output(reg)
+                        self.java_method.add_op(java_opl)
+                        java_opl.set_local(cls, var, mode)
+                        self.java_method.add_local(cls, var)
+            elif cmd == '.end local':
+                self.java_op.set_local_end(op['REG'])
+            elif cmd == '.array-data':
+                self.array_data_mode = True
+            elif cmd == '.end array-data':
+                self.array_data_mode = False
+            elif cmd == '.annotation':
+                self.annotation_mode = True
+            elif cmd == '.end annotation':
+                self.annotation_mode = False
+            elif cmd == '.sparse-switch' or cmd == '.packed-switch':
+                if 'VAL' in op:
+                    self.switchBase = int(op['VAL'], 16)
+                self.java_switch = JavaSwitch()
+                self.java_method.add_switch(self.java_label.name, self.java_switch)
 
-        elif line.startswith('end local', 1):
-            # .end local v0           #cityName:Ljava/lang/String;
-            part = line.split()
-            reg = part[2]
-
-            self.java_op.set_local_end(reg)
-            pass
-        elif line.startswith('array-data', 1):
-            self.array_data_mode = True
-        elif line.startswith('end array-data', 1):
-            self.array_data_mode = False
-        elif line.startswith('annotation', 1):
-            self.annotation_mode = True
-        elif line.startswith('end annotation', 1):
-            self.annotation_mode = False
-            pass
-        elif line.startswith('sparse-switch', 1) or line.startswith('packed-switch', 1):
-            # .sparse-switch
-            # .packed-switch 0x1
-            part = line.split()
-            if len(part) == 2:
-                self.switchBase = int(part[1], 16)
-
-            self.java_switch = JavaSwitch()
-            self.java_method.add_switch(self.java_label.name, self.java_switch)
-
-        elif line.startswith('end sparse-switch', 1) or line.startswith('end packed-switch', 1):
-            self.java_switch = None
-        elif line.startswith('catch', 1):
-            # .catch Ljava/lang/Exception; {:try_start_7 .. :try_end_7} :catch_7
-            part = line.split()
-            if line.startswith('all', 6):
-                cls = 'Exception'
+            elif cmd == '.end sparse-switch' or cmd == '.end packed-switch':
+                self.java_switch = None
+            elif cmd == '.catch' or cmd == '.catchall':
+                if cmd == '.catchall':
+                    cls = 'Exception'
+                else:
+                    cls = self.to_java_class_name(op['CLS'])
+                label_catch = op['LBL_C']
+                label_try_start = op['LBL_TS']
+                label_try_end = op['LBL_TE']
+                self.java_method.set_try_catch(label_try_start, label_try_end, cls, label_catch)
+                java_opl = JavaOp('catch')
+                java_opl.add_input(cls)
+                java_opl.add_input(label_catch)
+                self.java_method.add_op(java_opl)
+            elif cmd == '.source':
+                pass
+            elif cmd == '.registers':
+                pass
             else:
-                cls = self.make_class(part[1])
-                del part[1]
-
-            label_catch = part[4][1:]
-            label_try_start = part[1][2:]
-            label_try_end = part[3][1:-1]
-            self.java_method.set_try_catch(label_try_start, label_try_end, cls, label_catch)
-
-            java_opl = JavaOp('catch')
-            java_opl.add_input(cls)
-            java_opl.add_input(label_catch)
-            self.java_method.add_op(java_opl)
-        elif line.startswith('source', 1):
-            pass
-
-        elif line.startswith('registers', 1):
-            pass
+                self.debug('<error dot>' + line)
         else:
-            self.debug('<error dot>' + line)
+            self.debug('<error dot 2>' + line)
+
 
     def do_label(self, line):  # fix
         # :cond_1
@@ -739,7 +666,6 @@ class SmaliFile:
         java_opl.set_label(self.cur_label)
 
     def do_commit(self, line):
-        # self.append_method_to_file('//' + line)
         pass
 
     def do_command(self, line):
@@ -892,7 +818,7 @@ class SmaliFile:
         elif line.startswith('-static', 6):
             # invoke-static {p1}, Landroid/text/TextUtils;->isEmpty(Ljava/lang/CharSequence;)Z
             part3 = part[1].split(';')
-            func_class = self.make_class(part3[0] + ';')
+            func_class = self.to_java_class_name(part3[0] + ';')
 
             self.java_op = JavaOp('invoke')
             self.java_op.add_input(func_class)
@@ -998,7 +924,7 @@ class SmaliFile:
         # sput-object v1, Lcom/moji/mjweather/activity/AddCityActivity;->mHotCitys:[Ljava/lang/String;
         line = line.replace(', ', ' ')
         part = line.split()
-        cls = self.make_class(part[2])
+        cls = self.to_java_class_name(part[2])
         field = self.make_field(part[2])
         value = part[1]
 
@@ -1108,7 +1034,7 @@ class SmaliFile:
         if line.startswith('-instance', 3):
             # new-instance v1, Lcom/moji/mjweather/activity/AddCityActivity$1;
             var = part[1]
-            cls = self.make_class(part[2])
+            cls = self.to_java_class_name(part[2])
 
             self.java_op = JavaOp('new')
             self.java_op.set_output(var)
@@ -1122,7 +1048,7 @@ class SmaliFile:
             # new-array v1, v1, [Ljava/lang/String;
             var = part[1]
             size = (part[2])
-            cls = self.make_class(part[3])
+            cls = self.to_java_class_name(part[3])
 
             self.java_op = JavaOp('anew')
             self.java_op.set_output(var)
@@ -1174,7 +1100,7 @@ class SmaliFile:
         line = line.replace(',', '')
         part = line.split()
         var = part[1]
-        cls = self.make_class(part[2])
+        cls = self.to_java_class_name(part[2])
 
         self.java_op = JavaOp('check')
         self.java_op.set_output(var)
@@ -1339,7 +1265,7 @@ class SmaliFile:
         part = line.split()
         reg = part[1]
         value = (part[2])
-        cls = self.make_class(part[3])
+        cls = self.to_java_class_name(part[3])
 
         self.java_op = JavaOp('instanceof')
         self.java_op.set_output(reg)
@@ -1731,7 +1657,7 @@ class SmaliFile:
         line = line.replace(', ', ',')
         part = line.split()
         part2 = part[1].split(',')
-        cls = self.make_class(part2[2])
+        cls = self.to_java_class_name(part2[2])
         field = self.make_field(part2[2])
         self.cur_access = cls + '.' + 'this.' + field
 
@@ -1739,7 +1665,7 @@ class SmaliFile:
         # sput-object v1, Lcom/moji/mjweather/activity/AddCityActivity;->mHotCitys:[Ljava/lang/String;
         line = line.replace(', ', ' ')
         part = line.split()
-        cls = self.make_class(part[2])
+        cls = self.to_java_class_name(part[2])
         field = self.make_field(part[2])
         self.cur_access = cls + '.' + 'this.' + field
 
