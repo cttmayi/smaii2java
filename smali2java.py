@@ -524,7 +524,7 @@ class SmaliFile:
         return cs
 
     def do_dot(self, line):
-        op = re_gra.dot_to(line)
+        op = re_gra.to_op(line)
         if op is not None:
             cmd = op['CMD']
             if cmd == '.line':
@@ -647,7 +647,6 @@ class SmaliFile:
                 self.debug('<error dot>' + line)
         else:
             self.debug('<error dot 2>' + line)
-
 
     def do_label(self, line):  # fix
         # :cond_1
