@@ -15,55 +15,53 @@ LBL = ':([\w\d]+)'
 REGS = '([\w\d ,]+)'
 STRING = '(\".+\")'
 
+
 GS_DOT = [
     # .line 84
-    ['.line', ['\.line +', NUM], ['NUM']],
+    [['.line'], [' +', NUM], ['NUM']],
     # .class public Landroidx/activity/ComponentActivity;
-    ['.class', ['\.class +', ATTR, CLS], ['ATTR', None, 'CLS']],
+    [['.class'], [' +', ATTR, CLS], ['ATTR', None, 'CLS']],
     # .super Landroid/text/TextWatcher;
-    ['.super', ['\.super +', CLS], ['CLS']],
+    [['.super'], [' +', CLS], ['CLS']],
     # .implements Landroid/text/TextWatcher;
-    ['.implements', ['\.implements +', CLS], ['CLS']],
+    [['.implements'], [' +', CLS], ['CLS']],
     # .field private static final COLUMN_INDEX_FIRST:I = 0x0
-    ['.field', ['\.field +', ATTR, VAR, ':', VT, '( += +', NUM_16, ')*'], ['ATTR', None, 'VAR', 'VT', None, 'VAL']],
-    # .end field
-    ['.end field'],
+    [['.field'], [' +', ATTR, VAR, ':', VT, '( += +', NUM_16, ')*'], ['ATTR', None, 'VAR', 'VT', None, 'VAL']],
+    [['.end field']],
     # .method public static main([Ljava/lang/String;)V
-    ['.method', ['\.method +', ATTR, FUNC, '\(', PARAMS, '\)', FT], ['ATTR', None, 'FUNC', 'PARAMS', 'FT']],
-    # .end method
-    ['.end method'],
+    [['.method'], [' +', ATTR, FUNC, '\(', PARAMS, '\)', FT], ['ATTR', None, 'FUNC', 'PARAMS', 'FT']],
+    [['.end method']],
     # .parameter "x0"
-    ['.parameter', ['\.parameter +"', VAR, '"'], ['VAR']],
+    [['.parameter'], [' +"', VAR, '"'], ['VAR']],
     # .param p0, "feedbackType"    # I   @baksmali
-    ['.param', ['\.param +', REG, '(, +"', VAR, '")*'], ['REG', None, 'VAR']],
-    # .end param
-    ['.end param'],
+    [['.param'], [' +', REG, '(, +"', VAR, '")*'], ['REG', None, 'VAR']],
+    [['.end param']],
     # .locals 3
-    ['.locals', ['\.locals +' + NUM], ['NUM']],
+    [['.locals'], [' +' + NUM], ['NUM']],
     # .local v0, bundle:Landroid/os/Bundle;
-    ['.local', ['.local +', REG, ' +', VAR + ':' + VT], ['REG', 'VAR', 'VT']],
+    [['.local'], [' +', REG, ' +', VAR + ':' + VT], ['REG', 'VAR', 'VT']],
     # .end local v0           #cityName:Ljava/lang/String;
-    ['.end local', ['.end local +', REG,], ['REG']],
+    [['.end local'], [' +', REG,], ['REG']],
 
-    ['.array-data'],
-    ['.end array-data'],
-    ['.annotation'],
-    ['.end annotation'],
-    ['.source'],
-    ['.registers'],
+    [['.array-data']],
+    [['.end array-data']],
+    [['.annotation']],
+    [['.end annotation']],
+    [['.source']],
+    [['.registers']],
 
     # .sparse-switch
-    ['.sparse-switch'],
-    ['.end sparse-switch'],
+    [['.sparse-switch']],
+    [['.end sparse-switch']],
     # .packed-switch 0x1
-    ['.packed-switch', ['\.packed-switch +', NUM_16], ['NUM']],
-    ['.end packed-switch'],
+    [['.packed-switch'], [' +', NUM_16], ['NUM']],
+    [['.end packed-switch']],
     # '.catchall {:try_start_0 .. :try_end_0} :catchall_0'
-    ['.catchall', ['\.catchall +{', LBL, ' +\.\. +', LBL, '} +', LBL], ['LBL_TS', 'LBL_TE', 'LBL_C']],
+    [['.catchall'], [' +{', LBL, ' +\.\. +', LBL, '} +', LBL], ['LBL_TS', 'LBL_TE', 'LBL_C']],
     # .catch Ljava/lang/Exception; {:try_start_7 .. :try_end_7} :catch_7
-    ['.catch', ['\.catch +', CLS, ' +{', LBL, ' +\.\. +', LBL, '} +', LBL], ['CLS', 'LBL_TS', 'LBL_TE', 'LBL_C']],
+    [['.catch'], [' +', CLS, ' +{', LBL, ' +\.\. +', LBL, '} +', LBL], ['CLS', 'LBL_TS', 'LBL_TE', 'LBL_C']],
     # .enum Landroidx/annotation/RestrictTo$Scope;->LIBRARY:Landroidx/annotation/RestrictTo$Scope;
-    ['.enum'],
+    [['.enum']],
 ]
 
 GS_CMD = [
@@ -71,105 +69,109 @@ GS_CMD = [
     # invoke-direct {v0}, Ljava/lang/RuntimeException;-><init>()V
     # invoke-static {p1}, Landroid/text/TextUtils;->isEmpty(Ljava/lang/CharSequence;)Z
     # invoke-virtual {v2, v0}, Landroid/webkit/WebView;->loadUrl(Ljava/lang/String;)V
-    ['invoke', ['invoke\-', '(\w+)', ' +\{', REGS, '\}, +', CLS, '\-\>', FUNC], ['TP', 'REGS', 'CLS', 'FUNC']],
+    [['invoke'], ['\-', '(\w+)', ' +\{', REGS, '\}, +', CLS, '\-\>', FUNC], ['TP', 'REGS', 'CLS', 'FUNC']],
     # const/high16 v2, 0x7f03
     # const/high16 p0, 0x3f800000    # 1.0f
-    ['const', ['const\/', '(high\d+) +', REG, ', +', NUM_16], ['TP', 'REG', 'NUM']],
+    [['const'], ['\/', '(high\d+) +', REG, ', +', NUM_16], ['TP', 'REG', 'NUM']],
     # const-string v2, ", "
-    ['const', ['const\-string +', REG, ', +', STRING], ['REG', 'STR']],
+    [['const-string'], [' +', REG, ', +', STRING], ['REG', 'STR']],
 
-    # iget/iput
     # iput-object v2, p0, Lcom/tutor/apkinstaller/ApkInstaller;->apkWeb:Landroid/webkit/WebView;
-    ['i', ['i(\w+)\-object +', REG, ', +', REG, ', +', CLS, '\-\>', VAR, ':', CLS],
-        ['TP', 'REG_V', 'REG_O', 'CLS', 'VAR', 'VAR_C']],
+    [['iget', 'iput'], ['\-object +', REG, ', +', REG, ', +', CLS, '\-\>', VAR, ':', CLS],
+        ['REG_V', 'REG_O', 'CLS', 'VAR', 'VAR_C']],
 
-    # sget/sput
     # sput-object v1, Lcom/moji/mjweather/activity/AddCityActivity;->mHotCitys:[Ljava/lang/String;
-    ['s', ['s(\w+)\-object +', REG, ', +', CLS, '\-\>', VAR, ':', VT],
-     ['TP', 'REG', 'CLS', 'VAR', 'VT']],
+    [['sget', 'sput'], ['\-object +', REG, ', +', CLS, '\-\>', VAR, ':', VT],
+        ['REG', 'CLS', 'VAR', 'VT']],
 
-    # aget/aput
     # aget-object v3, v3, v0
-    ['a', ['a(\w+)\-object +', REG, ', +', REG, ', +', REG], ['REG', 'REG_AR', 'REG_ID']],
+    [['aget', 'aput'], ['\-object +', REG, ', +', REG, ', +', REG], ['REG', 'REG_AR', 'REG_ID']],
 
     # move-result-object v2
     # move-exception v0
-    ['move', ['move\-([\w\-]+) +', REG], ['TP', 'REG']],
+    [['move'], ['\-([\w\-]+) +', REG], ['TP', 'REG']],
     # move-object/from16 v0, p0
-    ['move-object', ['move\-object\/(from\d+) +', REG, ', +', REG], ['TP', 'REG']],
+    [['move-object'], ['\/(from\d+) +', REG, ', +', REG], ['TP', 'REG']],
 
     # return-void
-    ['return-void'],
+    [['return-void']],
     # return-object v0
-    ['return-object', ['return\-object +', REG], ['REG']],
+    [['return-object'], [' +', REG], ['REG']],
 
     # goto :goto_0
-    ['goto', ['goto +', LBL], ['LBL']],
+    [['goto'], [' +', LBL], ['LBL']],
 
     # new-instance v1, Lcom/moji/mjweather/activity/AddCityActivity$1;
-    ['new-instance', ['new\-instance +', REG, ', +', CLS], ['REG', 'CLS']],
+    [['new-instance'], [' +', REG, ', +', CLS], ['REG', 'CLS']],
     # new-array v1, v1, [Ljava/lang/String;
-    ['new-array', ['new\-array +', REG, ', +', REG, ', +', VT], ['REG_O', 'REG_L', 'VT']],
+    [['new-array'], [' +', REG, ', +', REG, ', +', VT], ['REG_O', 'REG_L', 'VT']],
 
     # fill-array-data v0, :array_0
-    ['fill-array-data', ['fill\-array\-data +', REG, ', +', LBL], ['REG', 'LBL']],
+    [['fill-array-data'], [' +', REG, ', +', LBL], ['REG', 'LBL']],
 
     # if-nez v1, :cond_0
     # if-ge v0, v1, :cond_1
-    ['if', ['if\-(\w+) +', REGS, ', +', LBL], ['TP', 'REGS', 'LBL']],
+    [['if'], ['\-(\w+) +', REGS, ', +', LBL], ['TP', 'REGS', 'LBL']],
 
     # check-cast v1, Landroid/widget/ImageButton;
-    ['check-cast', ['check\-cast +', REG, ', +', CLS], ['REG', 'CLS']],
-
-    # add/mul/sub/div/rem/add/or/xor/shl/shr/ushr
-    # mul-double/2addr v3, v5
+    [['check-cast'], [' +', REG, ', +', CLS], ['REG', 'CLS']],
 
 
-    # add-int/lit8 v9, v8, 0x1
-
-    # not/neg
-    # not-int vx, vy
 
     # cmpl-float v13, v11, v7
-    ['cmpl', ['cmpl\-(\w+) +', REG, ', +', REG, ', +', REG], ['TP', 'REG_1', 'REG_2', 'REG_3']],
+    [['cmpl-'], ['(\w+) +', REG, ', +', REG, ', +', REG], ['TP', 'REG_1', 'REG_2', 'REG_3']],
 
     # sparse-switch v1, :sswitch_data_0
     # packed-switch p0, :pswitch_data_0
-    ['sparse-switch', ['sparse\-switch +', REG, ', +', LBL], ['REG', 'LBL']],
-    ['packed-switch', ['packed\-switch +', REG, ', +', LBL], ['REG', 'LBL']],
+    [['sparse-switch', 'packed-switch'], [' +', REG, ', +', LBL], ['REG', 'LBL']],
 
     # array-length v1, v1
-    ['array-length', ['array\-length +', REG, ', +', REG], ['REG_1', 'REG_2']],
+    [['array-length'], [' +', REG, ', +', REG], ['REG_1', 'REG_2']],
 
     # throw v0
-    ['throw', ['throw +', REG], ['REG']],
+    [['throw'], [' +', REG], ['REG']],
 
     # instance-of v8, v7, Landroid/widget/TextView;
-    ['instance-of', ['instance\-of +', REG, ', +', REG, ', +', CLS], ['REG', 'CLS']],
+    [['instance-of'], [' +', REG, ', +', REG, ', +', CLS], ['REG', 'CLS']],
 
     # monitor-enter p0
-    ['monitor-enter', ['monitor\-enter +', REG], ['REG']],
+    [['monitor-enter'], [' +', REG], ['REG']],
 
     # int-to-double v3, v3
-    ['', ['(\w+)\-(to)\-(\w+) +', REG, ', +', REG], ['TP_1', 'CMD', 'TP_2', 'REG_1', 'REG_2']],
+    [['int'], ['-to\-(\w+) +', REG, ', +', REG], ['TP', 'REG_1', 'REG_2']],
 
+    # add/mul/sub/div/rem/add/or/xor/shl/shr/ushr
+    # mul-double/2addr v3, v5
+    # mul-double v0, v0, v2
+    # add-int/lit8 v9, v8, 0x1
+    [['add', 'mul', 'sub', 'div', 'rem', 'add', 'or', 'xor', 'shl', 'shr', 'ushr'],
+        ['\-(\w+)(/([\w\d]+))* +', REG, ', +', REG, '(, +', NUM_16, ')*'],
+        ['RV', None, 'RN', 'REG_1', 'REG_2', None, 'NUM']],
+
+    # not/neg
 
 ]
 
 
-for gs in GS_DOT:
-    if len(gs) >= 2:
-        gs[1] = ''.join(gs[1])
-    else:
-        gs.append(None)
-        gs.append(None)
+def make_gra(gfs):
+    gra_s = []
+    for fmt in gfs:
+        for st in fmt[0]:
+            gra = [st]
+            if len(fmt) >= 2:
+                gra.append(st.replace('.', '\\.') + ''.join(fmt[1]))
+            else:
+                gra.append(None)
+            if len(fmt) >= 3:
+                gra.append(fmt[2])
+            else:
+                gra.append(None)
+            gra_s.append(gra)
+    return gra_s
 
-for gs in GS_CMD:
-    if len(gs) >= 2:
-        gs[1] = ''.join(gs[1])
-    else:
-        gs.append(None)
-        gs.append(None)
+
+GS_DOT = make_gra(GS_DOT)
+GS_CMD = make_gra(GS_CMD)
 
 
 def __get_attr(attr):
@@ -285,14 +287,13 @@ if __name__ == "__main__":
         ['if-nez v1, :cond_0', None],
         ['if-ge v0, v1, :cond_1', None],
 
-        ['check-cast v1, Landroid/widget/ImageButton;', None],
+        ['check-cast v1, Landroid/widget/ImageButton;', {'CLS': 'Landroid/widget/ImageButton;'}],
 
         ['mul-double/2addr v3, v5', None],
-        ['add-int/lit8 v9, v8, 0x1', None],
+        ['add-int/lit8 v9, v8, 0x1', {'NUM': '0x1'}],
+        ['mul-double v0, v0, v2', None],
 
-        ['not-int vx, vy', None],
-
-        ['cmpl-float v13, v11, v7', None],
+        ['cmpl-float v13, v11, v7', {'REG_1': 'v13'}],
 
         ['sparse-switch v1, :sswitch_data_0', None],
         ['packed-switch p0, :pswitch_data_0', None],
