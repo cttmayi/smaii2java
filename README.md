@@ -2,10 +2,6 @@
 
 ------------
 
-
-
-
-
 Android SMALI 文件翻译为Java代码
 
 ## 使用方法
@@ -63,7 +59,8 @@ Android SMALI 文件翻译为Java代码
 	}
 ```
 
-
+## 博客
+http://www.gcsjj.cn/tags/smali2java
 
 
 
